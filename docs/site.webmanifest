@@ -1,0 +1,16 @@
+{
+  "name": "Hub de herramientas",
+  "short_name": "Hub",
+  "start_url": "/site-root/",
+  "scope": "/site-root/",
+  "display": "standalone",
+  "background_color": "#0f172a",
+  "theme_color": "#0f172a",
+  "icons": [
+    {
+      "src": "favicon.png",
+      "sizes": "512x512",
+      "type": "image/png"
+    }
+  ]
+}

@@ -1,0 +1,4 @@
+User-agent: *
+Allow: /
+
+Sitemap: https://aiarepita-cpu.github.io/site-root/sitemap.xml
