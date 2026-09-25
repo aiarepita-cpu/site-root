@@ -60,7 +60,7 @@ def detect_new_fvg(
     return None
 
 
-def step_fvg(fvg: FVG, candle: Candle, swings: list[Swing]) -> Trade | None:
+def step_fvg(fvg: FVG, candle: Candle, swings: list[Swing], target_n: int = 1) -> Trade | None:
     """Advances one active FVG (WATCHING or TOUCHED) by one candle.
     Mutates fvg.state in place. Returns a new Trade if this candle
     triggers the entry, else None. Once the state is anything other than
@@ -91,17 +91,17 @@ def step_fvg(fvg: FVG, candle: Candle, swings: list[Swing]) -> Trade | None:
         # Never actually retraced into the zone yet: nothing to confirm.
         return None
 
-    return _try_enter(fvg, candle, swings, want_swing=("high" if bullish else "low"))
+    return _try_enter(fvg, candle, swings, want_swing=("high" if bullish else "low"), target_n=target_n)
 
 
-def _try_enter(fvg: FVG, candle: Candle, swings: list[Swing], want_swing: str) -> Trade | None:
+def _try_enter(fvg: FVG, candle: Candle, swings: list[Swing], want_swing: str, target_n: int = 1) -> Trade | None:
     entry_price = candle.close
     risk = abs(entry_price - fvg.sl_price)
     if risk <= 0:
         fvg.state = FVGState.CANCELLED_NO_TARGET
         return None
 
-    target = nearest_swing(swings, before_index=candle.index, want=want_swing)
+    target = nearest_swing(swings, before_index=candle.index, want=want_swing, n=target_n)
     if target is None:
         fvg.state = FVGState.CANCELLED_NO_TARGET
         return None

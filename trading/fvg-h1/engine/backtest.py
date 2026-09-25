@@ -4,9 +4,14 @@ from .trend import TrendTracker
 from .fvg_detector import detect_new_fvg, step_fvg
 
 
-def run(candles: list[Candle]) -> tuple[list[Trade], list[FVG]]:
-    swings = detect_swings(candles)
-    tracker = TrendTracker(swings)
+def run(candles: list[Candle], structure_n: int = 1, target_n: int = 1) -> tuple[list[Trade], list[FVG]]:
+    """`structure_n` sizes the fractal used for trend BOS/CHoCH and for
+    the leg-origin SL; `target_n` sizes the (smaller) fractal used to
+    pick the nearest opposite swing as TP.
+    """
+    structure_swings = detect_swings(candles, structure_n)
+    target_swings = structure_swings if target_n == structure_n else detect_swings(candles, target_n)
+    tracker = TrendTracker(structure_swings, structure_n)
 
     fvgs: list[FVG] = []
     active: list[FVG] = []
@@ -32,7 +37,7 @@ def run(candles: list[Candle]) -> tuple[list[Trade], list[FVG]]:
         # 2) advance every still-active FVG
         still_active = []
         for fvg in active:
-            trade = step_fvg(fvg, candle, swings)
+            trade = step_fvg(fvg, candle, target_swings, target_n)
             if trade is not None and open_trade is None:
                 trade.id = next_trade_id
                 next_trade_id += 1

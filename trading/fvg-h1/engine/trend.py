@@ -9,7 +9,7 @@ class TrendTracker:
       (BOS if already up, CHoCH if it was down/undefined).
     - A candle's CLOSE breaking below the last swing low => downtrend.
     - No lookahead: a swing formed at index k is only usable once
-      candle k+1 has closed (see swings.detect_swings).
+      candle k+n has closed (see swings.detect_swings).
 
     A REVERSAL break (CHoCH: trend flips down->up or up->down, or the
     very first break) starts a new "leg", whose origin is the
@@ -22,10 +22,10 @@ class TrendTracker:
     the next CHoCH starts a genuinely new leg.
     """
 
-    def __init__(self, swings: list[Swing]):
+    def __init__(self, swings: list[Swing], n: int = 1):
         self._swings_by_confirm_index: dict[int, list[Swing]] = {}
         for s in swings:
-            self._swings_by_confirm_index.setdefault(s.index + 1, []).append(s)
+            self._swings_by_confirm_index.setdefault(s.index + n, []).append(s)
         self.last_high: Swing | None = None
         self.last_low: Swing | None = None
         self.trend: str | None = None  # "up" / "down" / None
