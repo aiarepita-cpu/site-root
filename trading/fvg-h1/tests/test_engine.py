@@ -208,7 +208,48 @@ def test_break_with_displacement_counts_and_records_its_fvg():
     print("test_break_with_displacement_counts_and_records_its_fvg: OK")
 
 
+def test_ltf_catches_rejection_the_h1_candle_hides():
+    from datetime import datetime, timedelta
+    from engine.models import Candle
+
+    def H(i, o, h, l, c):
+        return Candle(i, datetime(2020, 1, 1) + timedelta(hours=i), o, h, l, c)
+
+    def M(mins, o, h, l, c):
+        return Candle(0, datetime(2020, 1, 1) + timedelta(hours=8, minutes=mins), o, h, l, c)
+
+    h1 = [
+        H(0, 100, 101, 90, 100),
+        H(1, 100, 110, 104, 108),
+        H(2, 104, 109, 80, 93),
+        H(3, 93, 112, 92, 111),
+        H(4, 111, 113, 108, 109),
+        H(5, 109, 130, 108, 129),
+        H(6, 138, 142, 118, 140),  # FVG zone [113,118]
+        H(7, 140, 141, 116, 138),  # touches the zone
+        H(8, 138, 139, 114, 120),  # as an H1 candle it never clears the zone
+    ]
+    # inside hour 8: price dips into the FVG and rejects back out
+    m15 = [
+        M(0, 138, 139, 130, 132),
+        M(15, 132, 133, 114, 116),  # into the zone
+        M(30, 116, 122, 115, 121),  # closes 121, above the zone top (118)
+        M(45, 121, 123, 119, 120),
+    ]
+
+    assert len(run(h1)[0]) == 0  # H1 alone misses it entirely
+
+    trades, _ = run(h1, ltf=m15, ltf_entry_mode="close")
+    assert len(trades) == 1
+    assert trades[0].entry_price == 121  # the :30 candle, as it rejects
+
+    # stricter modes only fire a candle later, at a worse price
+    assert run(h1, ltf=m15, ltf_entry_mode="body")[0][0].entry_price == 120
+    print("test_ltf_catches_rejection_the_h1_candle_hides: OK")
+
+
 if __name__ == "__main__":
+    test_ltf_catches_rejection_the_h1_candle_hides()
     test_break_without_fvg_is_not_a_break()
     test_break_with_displacement_counts_and_records_its_fvg()
     test_sl_uses_leg_origin_not_nearest_retracement()

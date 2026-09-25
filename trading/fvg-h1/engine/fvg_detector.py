@@ -77,15 +77,38 @@ def detect_new_fvg(
     return None
 
 
-def step_fvg(fvg: FVG, candle: Candle, swings: list[Swing], target_n: int = 1) -> Trade | None:
+def step_fvg(
+    fvg: FVG,
+    candle: Candle,
+    swings: list[Swing],
+    target_n: int = 1,
+    h1_index: int | None = None,
+    entry_mode: str = "range",
+) -> Trade | None:
     """Advances one active FVG (WATCHING or TOUCHED) by one candle.
     Mutates fvg.state in place. Returns a new Trade if this candle
     triggers the entry, else None. Once the state is anything other than
     WATCHING/TOUCHED the FVG is resolved and must not be stepped again.
+
+    `candle` supplies the prices. When driving the zone with a lower
+    timeframe, pass the LTF candle here and the current H1 index as
+    `h1_index` (used for the swing-target lookup and trade bookkeeping).
+    Invalidation and touch are wick-based, so they give identical
+    results on either timeframe -- an H1 high/low IS the extreme of its
+    sub-candles. Only the entry trigger actually differs.
+
+    `entry_mode` sets how much of the confirming candle must be beyond
+    the near edge:
+      "range" - the whole candle, wick included (the original H1 rule)
+      "body"  - the whole body (open AND close) beyond it
+      "close" - the close beyond it, which is what "exceeds it with the
+                body" normally means: the body crossed out of the zone,
+                as opposed to only a wick poking out.
     """
     if fvg.state not in (FVGState.WATCHING, FVGState.TOUCHED):
         return None
-    if candle.index <= fvg.formed_index:
+    ref_index = h1_index if h1_index is not None else candle.index
+    if ref_index <= fvg.formed_index:
         return None
 
     bullish = fvg.direction is Direction.BUY
@@ -97,28 +120,40 @@ def step_fvg(fvg: FVG, candle: Candle, swings: list[Swing], target_n: int = 1) -
 
     wick_near = candle.low if bullish else candle.high
     inside_zone = (wick_near <= fvg.near_edge) if bullish else (wick_near >= fvg.near_edge)
-    cleared_near = not inside_zone
 
-    if not cleared_near:
+    if inside_zone:
         fvg.touched = True
         fvg.state = FVGState.TOUCHED
+
+    if entry_mode == "close":
+        cleared = (candle.close > fvg.near_edge) if bullish else (candle.close < fvg.near_edge)
+    elif entry_mode == "body":
+        body = candle.body_bottom if bullish else candle.body_top
+        cleared = (body > fvg.near_edge) if bullish else (body < fvg.near_edge)
+    else:
+        cleared = not inside_zone
+
+    if not cleared or not fvg.touched:
         return None
 
-    if not fvg.touched:
-        # Never actually retraced into the zone yet: nothing to confirm.
-        return None
+    return _try_enter(
+        fvg, candle, swings,
+        want_swing=("high" if bullish else "low"),
+        target_n=target_n,
+        ref_index=ref_index,
+    )
 
-    return _try_enter(fvg, candle, swings, want_swing=("high" if bullish else "low"), target_n=target_n)
 
-
-def _try_enter(fvg: FVG, candle: Candle, swings: list[Swing], want_swing: str, target_n: int = 1) -> Trade | None:
+def _try_enter(fvg: FVG, candle: Candle, swings: list[Swing], want_swing: str,
+               target_n: int = 1, ref_index: int | None = None) -> Trade | None:
+    idx = ref_index if ref_index is not None else candle.index
     entry_price = candle.close
     risk = abs(entry_price - fvg.sl_price)
     if risk <= 0:
         fvg.state = FVGState.CANCELLED_NO_TARGET
         return None
 
-    target = nearest_swing(swings, before_index=candle.index, want=want_swing, n=target_n)
+    target = nearest_swing(swings, before_index=idx, want=want_swing, n=target_n)
     if target is None:
         fvg.state = FVGState.CANCELLED_NO_TARGET
         return None
@@ -140,7 +175,7 @@ def _try_enter(fvg: FVG, candle: Candle, swings: list[Swing], want_swing: str, t
         id=-1,
         fvg_id=fvg.id,
         direction=fvg.direction,
-        entry_index=candle.index,
+        entry_index=idx,
         entry_price=entry_price,
         sl_price=fvg.sl_price,
         tp_price=tp_price,

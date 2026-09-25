@@ -11,6 +11,8 @@ def run(
     require_fvg_break: bool = False,
     fvg_window: int = 2,
     break_fvg_only: bool = False,
+    ltf: list[Candle] | None = None,
+    ltf_entry_mode: str = "close",
 ) -> tuple[list[Trade], list[FVG]]:
     """`structure_n` sizes the fractal used for trend BOS/CHoCH and for
     the leg-origin SL; `target_n` sizes the (smaller) fractal used to
@@ -20,6 +22,13 @@ def run(
     displaced, leaving an FVG in the same direction (see TrendTracker).
     `break_fvg_only`: trade only the FVG that validated the break that
     started the current leg, instead of every trend-aligned FVG.
+
+    `ltf`: optional lower-timeframe candles (e.g. M15) that drive the
+    zone. The FVG itself, the trend, the SL and the TP target all stay
+    on H1; only the entry trigger and the SL/TP resolution move to the
+    finer series, so the rejection candle is caught within the hour
+    instead of waiting for the hour to close. `ltf_entry_mode` ("close" / "body" / "range") sets how much
+    of the confirming LTF candle must be beyond the zone.
     """
     structure_swings = detect_swings(candles, structure_n)
     target_swings = structure_swings if target_n == structure_n else detect_swings(candles, target_n)
@@ -32,6 +41,7 @@ def run(
     next_fvg_id = 0
     next_trade_id = 0
     seen_break_fvgs: set[int] = set()
+    ltf_by_hour = _group_ltf(candles, ltf) if ltf else None
 
     for i, candle in enumerate(candles):
         # 0) raw FVG geometry for this candle, so the tracker can decide
@@ -42,29 +52,39 @@ def run(
 
         trend = tracker.update(candle)
 
-        # 1) manage an already-open trade (only one at a time: while a
-        #    trade is open we do not evaluate new entries, but FVG
-        #    detection/tracking keeps running so nothing is missed).
-        if open_trade is not None and candle.index > open_trade.entry_index:
-            outcome = _resolve_bar(open_trade, candle)
-            if outcome:
-                open_trade.exit_index = candle.index
-                open_trade.exit_price = outcome[1]
-                open_trade.outcome = outcome[0]
-                open_trade = None
+        # steps 1 and 2 run once per H1 candle, or once per sub-candle
+        # when a lower timeframe drives the zone.
+        sub_candles = ltf_by_hour.get(i, []) if ltf_by_hour is not None else [candle]
+        use_ltf = ltf_by_hour is not None
 
-        # 2) advance every still-active FVG
-        still_active = []
-        for fvg in active:
-            trade = step_fvg(fvg, candle, target_swings, target_n)
-            if trade is not None and open_trade is None:
-                trade.id = next_trade_id
-                next_trade_id += 1
-                trades.append(trade)
-                open_trade = trade
-            if fvg.state in (FVGState.WATCHING, FVGState.TOUCHED):
-                still_active.append(fvg)
-        active = still_active
+        for sub in sub_candles:
+            # 1) manage an already-open trade (only one at a time: while
+            #    a trade is open we do not evaluate new entries, but FVG
+            #    detection/tracking keeps running so nothing is missed).
+            if open_trade is not None and i > open_trade.entry_index:
+                outcome = _resolve_bar(open_trade, sub)
+                if outcome:
+                    open_trade.exit_index = i
+                    open_trade.exit_price = outcome[1]
+                    open_trade.outcome = outcome[0]
+                    open_trade = None
+
+            # 2) advance every still-active FVG
+            still_active = []
+            for fvg in active:
+                trade = step_fvg(
+                    fvg, sub, target_swings, target_n,
+                    h1_index=i if use_ltf else None,
+                    entry_mode=ltf_entry_mode if use_ltf else "range",
+                )
+                if trade is not None and open_trade is None:
+                    trade.id = next_trade_id
+                    next_trade_id += 1
+                    trades.append(trade)
+                    open_trade = trade
+                if fvg.state in (FVGState.WATCHING, FVGState.TOUCHED):
+                    still_active.append(fvg)
+            active = still_active
 
         # 3) look for a brand-new tradeable FVG
         if break_fvg_only:
@@ -99,6 +119,23 @@ def run(
                 active.append(new_fvg)
 
     return trades, fvgs
+
+
+def _group_ltf(candles: list[Candle], ltf: list[Candle]) -> dict[int, list[Candle]]:
+    """Buckets lower-timeframe candles under the H1 candle they belong to,
+    by timestamp. An LTF candle with no matching H1 bar is dropped.
+    """
+    starts = {c.timestamp: i for i, c in enumerate(candles)}
+    step = candles[1].timestamp - candles[0].timestamp if len(candles) > 1 else None
+    out: dict[int, list[Candle]] = {}
+    for sub in ltf:
+        hour_start = sub.timestamp.replace(minute=0, second=0, microsecond=0)
+        i = starts.get(hour_start)
+        if i is not None:
+            out.setdefault(i, []).append(sub)
+    for v in out.values():
+        v.sort(key=lambda c: c.timestamp)
+    return out
 
 
 def _resolve_bar(trade: Trade, candle: Candle):
