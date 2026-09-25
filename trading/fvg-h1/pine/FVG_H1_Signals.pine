@@ -34,14 +34,20 @@ var float  legOriginHigh = na   // swing high que originó el tramo bajista vige
 var int    brokenHighIdx = na
 var int    brokenLowIdx  = na
 
-if not na(lastHighPrice) and close > lastHighPrice and lastHighIdx != brokenHighIdx
-    isReversal = trend != "up"
+// na() explícito en todas las comparaciones: en Pine el resultado de
+// comparar contra na no es fiable y un falso negativo acá dejaría la
+// tendencia sin activarse nunca, en silencio.
+brokeHigh = not na(lastHighPrice) and close > lastHighPrice and (na(brokenHighIdx) or lastHighIdx != brokenHighIdx)
+brokeLow  = not na(lastLowPrice) and close < lastLowPrice and (na(brokenLowIdx) or lastLowIdx != brokenLowIdx)
+
+if brokeHigh
+    isReversal = na(trend) or trend != "up"
     trend := "up"
     brokenHighIdx := lastHighIdx
     if isReversal
         legOriginLow := lastLowPrice
-else if not na(lastLowPrice) and close < lastLowPrice and lastLowIdx != brokenLowIdx
-    isReversal = trend != "down"
+else if brokeLow
+    isReversal = na(trend) or trend != "down"
     trend := "down"
     brokenLowIdx := lastLowIdx
     if isReversal
@@ -76,56 +82,61 @@ if hasOpen
         hasOpen := false
 
 // 2) avanza cada FVG activa (sin `continue`: todo con if/else anidados)
+// OJO: en Pine, `for i = 0 to -1` NO salta el bucle, itera hacia abajo.
+// De ahí el guard de tamaño.
 newActive = array.new<FVG>()
-for i = 0 to array.size(activeFvgs) - 1
-    f = array.get(activeFvgs, i)
-    bullish = f.dir == "BUY"
-    wick = bullish ? low : high
-    crossedFar = bullish ? wick <= f.farEdge : wick >= f.farEdge
+if array.size(activeFvgs) > 0
+    for i = 0 to array.size(activeFvgs) - 1
+        f = array.get(activeFvgs, i)
+        bullish = f.dir == "BUY"
+        wick = bullish ? low : high
+        crossedFar = bullish ? wick <= f.farEdge : wick >= f.farEdge
 
-    if crossedFar
-        box.delete(f.zoneBox)
-    else
-        insideZone  = bullish ? wick <= f.nearEdge : wick >= f.nearEdge
-        clearedNear = not insideZone
-
-        if not clearedNear
-            f.touched := true
-            array.push(newActive, f)
-        else if not f.touched
-            array.push(newActive, f)
-        else if oneAtATime and hasOpen
-            array.push(newActive, f)
+        if crossedFar
+            if not na(f.zoneBox)
+                box.delete(f.zoneBox)
         else
-            entryPrice = close
-            risk       = math.abs(entryPrice - f.sl)
-            // mismo margen de 1 barra extra que el backtest (swings.nearest_swing):
-            // un swing recién confirmado en la barra anterior todavía no cuenta como objetivo.
-            targetOk   = bullish ? not na(lastHighBody[1]) : not na(lastLowBody[1])
-            targetBody = bullish ? lastHighBody[1] : lastLowBody[1]
-            reward     = bullish ? targetBody - entryPrice : entryPrice - targetBody
-            valid      = risk > 0 and targetOk and reward > 0 and (reward / risk) >= minRR
+            insideZone  = bullish ? wick <= f.nearEdge : wick >= f.nearEdge
+            clearedNear = not insideZone
 
-            box.delete(f.zoneBox)
-            if valid
-                rr  = reward / risk
-                txt = (bullish ? "BUY" : "SELL") + "\nSL " + str.tostring(f.sl, format.mintick) + "  TP " + str.tostring(targetBody, format.mintick) + "\nR:R " + str.tostring(rr, "#.##")
-                label.new(bar_index, bullish ? low : high, txt,
-                     style = bullish ? label.style_label_up : label.style_label_down,
-                     color = bullish ? color.new(color.green, 0) : color.new(color.red, 0),
-                     textcolor = color.white, size = size.small)
-                if showSLTP
-                    line.new(bar_index, f.sl, bar_index + lineBars, f.sl, color = color.red, width = 1)
-                    line.new(bar_index, targetBody, bar_index + lineBars, targetBody, color = color.green, width = 1)
-                hasOpen := true
-                openSl  := f.sl
-                openTp  := targetBody
-                openDir := f.dir
-                if bullish
-                    buySignal := true
-                else
-                    sellSignal := true
+            if not clearedNear
+                f.touched := true
+                array.push(newActive, f)
+            else if not f.touched
+                array.push(newActive, f)
+            else if oneAtATime and hasOpen
+                array.push(newActive, f)
+            else
+                entryPrice = close
+                risk       = math.abs(entryPrice - f.sl)
+                // mismo margen de 1 barra extra que el backtest (swings.nearest_swing):
+                // un swing recién confirmado en la barra anterior todavía no cuenta como objetivo.
+                targetOk   = bullish ? not na(lastHighBody[1]) : not na(lastLowBody[1])
+                targetBody = bullish ? lastHighBody[1] : lastLowBody[1]
+                reward     = bullish ? targetBody - entryPrice : entryPrice - targetBody
+                valid      = risk > 0 and targetOk and reward > 0 and (reward / risk) >= minRR
+
+                if not na(f.zoneBox)
+                    box.delete(f.zoneBox)
                 // si no es válida (sin objetivo o R:R < mínimo) se descarta sin más
+                if valid
+                    rr  = reward / risk
+                    txt = (bullish ? "BUY" : "SELL") + "\nSL " + str.tostring(f.sl, format.mintick) + "  TP " + str.tostring(targetBody, format.mintick) + "\nR:R " + str.tostring(rr, "#.##")
+                    label.new(bar_index, bullish ? low : high, txt,
+                         style = bullish ? label.style_label_up : label.style_label_down,
+                         color = bullish ? color.new(color.green, 0) : color.new(color.red, 0),
+                         textcolor = color.white, size = size.small)
+                    if showSLTP
+                        line.new(bar_index, f.sl, bar_index + lineBars, f.sl, color = color.red, width = 1)
+                        line.new(bar_index, targetBody, bar_index + lineBars, targetBody, color = color.green, width = 1)
+                    hasOpen := true
+                    openSl  := f.sl
+                    openTp  := targetBody
+                    openDir := f.dir
+                    if bullish
+                        buySignal := true
+                    else
+                        sellSignal := true
 
 activeFvgs := newActive
 
@@ -136,14 +147,17 @@ if bar_index >= 2
     formedHigh = high
     formedLow  = low
 
-    if trend == "up" and originHigh < formedLow
+    trendUp   = not na(trend) and trend == "up"
+    trendDown = not na(trend) and trend == "down"
+
+    if trendUp and originHigh < formedLow
         zLow  = originHigh
         zHigh = formedLow
         slPx  = not na(legOriginLow) ? legOriginLow : originLow
         b = showZones ? box.new(bar_index[2], zHigh, bar_index, zLow, border_color = color.new(color.teal, 30), bgcolor = color.new(color.teal, 85)) : na
         array.push(activeFvgs, FVG.new("BUY", zLow, zHigh, zLow, zHigh, slPx, false, b))
 
-    else if trend == "down" and originLow > formedHigh
+    else if trendDown and originLow > formedHigh
         zLow  = formedHigh
         zHigh = originLow
         slPx  = not na(legOriginHigh) ? legOriginHigh : high[2]
