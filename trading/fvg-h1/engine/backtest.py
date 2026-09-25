@@ -43,7 +43,7 @@ def run(candles: list[Candle]) -> tuple[list[Trade], list[FVG]]:
         active = still_active
 
         # 3) look for a brand-new FVG on this candle
-        new_fvg = detect_new_fvg(candles, i, trend)
+        new_fvg = detect_new_fvg(candles, i, trend, swings)
         if new_fvg is not None:
             new_fvg.id = next_fvg_id
             next_fvg_id += 1

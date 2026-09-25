@@ -20,7 +20,7 @@ def detect_swings(candles: list[Candle]) -> list[Swing]:
     return swings
 
 
-def nearest_opposite_swing(swings: list[Swing], before_index: int, want: str) -> Swing | None:
+def nearest_swing(swings: list[Swing], before_index: int, want: str) -> Swing | None:
     """Nearest confirmed swing of type `want` ('high' or 'low') strictly
     before `before_index`. Swings are confirmed one candle after they
     happen, so a swing at index k is usable only once k + 1 < before_index

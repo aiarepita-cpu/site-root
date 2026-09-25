@@ -1,18 +1,27 @@
 from .models import Candle, Direction, FVG, FVGState, Swing, Trade
-from .swings import nearest_opposite_swing
+from .swings import nearest_swing
 
 MIN_RR = 0.3
 
 
-def detect_new_fvg(candles: list[Candle], i: int, trend: str | None) -> FVG | None:
+def detect_new_fvg(candles: list[Candle], i: int, trend: str | None, swings: list[Swing]) -> FVG | None:
     """Looks at the 3-candle window ending at i (i-2, i-1, i) and returns a
     new FVG only if it forms in the same direction as `trend`.
+
+    SL = wick of the swing that started the impulse leg this FVG belongs
+    to (the swing low behind a bullish leg, the swing high behind a
+    bearish leg) -- not simply the origin candle's wick. If no such
+    swing is confirmed yet, there is nothing to risk-manage against and
+    the FVG is not created at all.
     """
     if i < 2 or trend is None:
         return None
     origin, _mid, formed = candles[i - 2], candles[i - 1], candles[i]
 
     if trend == "up" and origin.high < formed.low:
+        leg_start = nearest_swing(swings, before_index=formed.index, want="low")
+        if leg_start is None:
+            return None
         zone_low, zone_high = origin.high, formed.low
         return FVG(
             id=-1,
@@ -23,10 +32,13 @@ def detect_new_fvg(candles: list[Candle], i: int, trend: str | None) -> FVG | No
             zone_high=zone_high,
             far_edge=zone_low,     # a wick crossing below here invalidates
             near_edge=zone_high,   # must clear above here (wick incl.) to enter
-            sl_price=origin.low,    # wick of the candle that started the FVG
+            sl_price=leg_start.price,   # wick of the swing that started this leg
         )
 
     if trend == "down" and origin.low > formed.high:
+        leg_start = nearest_swing(swings, before_index=formed.index, want="high")
+        if leg_start is None:
+            return None
         zone_low, zone_high = formed.high, origin.low
         return FVG(
             id=-1,
@@ -37,7 +49,7 @@ def detect_new_fvg(candles: list[Candle], i: int, trend: str | None) -> FVG | No
             zone_high=zone_high,
             far_edge=zone_high,   # a wick crossing above here invalidates
             near_edge=zone_low,    # must clear below here (wick incl.) to enter
-            sl_price=origin.high,
+            sl_price=leg_start.price,   # wick of the swing that started this leg
         )
 
     return None
@@ -84,7 +96,7 @@ def _try_enter(fvg: FVG, candle: Candle, swings: list[Swing], want_swing: str) -
         fvg.state = FVGState.CANCELLED_NO_TARGET
         return None
 
-    target = nearest_opposite_swing(swings, before_index=candle.index, want=want_swing)
+    target = nearest_swing(swings, before_index=candle.index, want=want_swing)
     if target is None:
         fvg.state = FVGState.CANCELLED_NO_TARGET
         return None
