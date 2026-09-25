@@ -1,0 +1,154 @@
+//@version=5
+indicator("FVG H1 Signals (BOS/CHoCH + leg-origin SL)", overlay=true, max_labels_count=500, max_boxes_count=500, max_lines_count=500)
+
+minRR      = input.float(0.3, "R:R mínimo para tomar la señal", minval=0.0, step=0.05)
+oneAtATime = input.bool(true, "Una sola señal activa a la vez (igual al backtest)")
+showZones  = input.bool(true, "Dibujar zonas FVG activas")
+showSLTP   = input.bool(true, "Dibujar SL/TP al disparar la señal")
+lineBars   = input.int(30, "Largo de las líneas SL/TP (barras)", minval=5)
+
+// ---------------- swings: fractal de 3 velas (1 vecino a cada lado) ----------------
+pivHigh = ta.pivothigh(high, 1, 1)
+pivLow  = ta.pivotlow(low, 1, 1)
+
+var float lastHighPrice = na
+var int   lastHighIdx   = na
+var float lastHighBody  = na
+var float lastLowPrice  = na
+var int   lastLowIdx    = na
+var float lastLowBody   = na
+
+if not na(pivHigh)
+    lastHighPrice := pivHigh
+    lastHighIdx   := bar_index[1]
+    lastHighBody  := math.max(open[1], close[1])
+if not na(pivLow)
+    lastLowPrice := pivLow
+    lastLowIdx   := bar_index[1]
+    lastLowBody  := math.min(open[1], close[1])
+
+// ---------------- tendencia BOS/CHoCH + origen del tramo (leg) ----------------
+var string trend        = na
+var float  legOriginLow  = na   // swing low que originó el tramo alcista vigente
+var float  legOriginHigh = na   // swing high que originó el tramo bajista vigente
+var int    brokenHighIdx = na
+var int    brokenLowIdx  = na
+
+if not na(lastHighPrice) and close > lastHighPrice and lastHighIdx != brokenHighIdx
+    isReversal = trend != "up"
+    trend := "up"
+    brokenHighIdx := lastHighIdx
+    if isReversal
+        legOriginLow := lastLowPrice
+else if not na(lastLowPrice) and close < lastLowPrice and lastLowIdx != brokenLowIdx
+    isReversal = trend != "down"
+    trend := "down"
+    brokenLowIdx := lastLowIdx
+    if isReversal
+        legOriginHigh := lastHighPrice
+
+// ---------------- FVG: estado por zona activa ----------------
+type FVG
+    string dir        // "BUY" / "SELL"
+    float  zoneLow
+    float  zoneHigh
+    float  farEdge     // mecha que la cruza => invalidada
+    float  nearEdge    // hay que cerrar totalmente fuera de acá (mecha incl.) => entrada
+    float  sl
+    bool   touched
+    box    zoneBox
+
+var array<FVG> activeFvgs = array.new<FVG>()
+
+var bool   hasOpen = false
+var float  openSl  = na
+var float  openTp  = na
+var string openDir = na
+
+buySignal  = false
+sellSignal = false
+
+// 1) gestiona la operación abierta (si "una a la vez" está activo)
+if hasOpen
+    hitSl = openDir == "BUY" ? low <= openSl : high >= openSl
+    hitTp = openDir == "BUY" ? high >= openTp : low <= openTp
+    if hitSl or hitTp
+        hasOpen := false
+
+// 2) avanza cada FVG activa (sin `continue`: todo con if/else anidados)
+newActive = array.new<FVG>()
+for i = 0 to array.size(activeFvgs) - 1
+    f = array.get(activeFvgs, i)
+    bullish = f.dir == "BUY"
+    wick = bullish ? low : high
+    crossedFar = bullish ? wick <= f.farEdge : wick >= f.farEdge
+
+    if crossedFar
+        box.delete(f.zoneBox)
+    else
+        insideZone  = bullish ? wick <= f.nearEdge : wick >= f.nearEdge
+        clearedNear = not insideZone
+
+        if not clearedNear
+            f.touched := true
+            array.push(newActive, f)
+        else if not f.touched
+            array.push(newActive, f)
+        else if oneAtATime and hasOpen
+            array.push(newActive, f)
+        else
+            entryPrice = close
+            risk       = math.abs(entryPrice - f.sl)
+            // mismo margen de 1 barra extra que el backtest (swings.nearest_swing):
+            // un swing recién confirmado en la barra anterior todavía no cuenta como objetivo.
+            targetOk   = bullish ? not na(lastHighBody[1]) : not na(lastLowBody[1])
+            targetBody = bullish ? lastHighBody[1] : lastLowBody[1]
+            reward     = bullish ? targetBody - entryPrice : entryPrice - targetBody
+            valid      = risk > 0 and targetOk and reward > 0 and (reward / risk) >= minRR
+
+            box.delete(f.zoneBox)
+            if valid
+                rr  = reward / risk
+                txt = (bullish ? "BUY" : "SELL") + "\nSL " + str.tostring(f.sl, format.mintick) + "  TP " + str.tostring(targetBody, format.mintick) + "\nR:R " + str.tostring(rr, "#.##")
+                label.new(bar_index, bullish ? low : high, txt,
+                     style = bullish ? label.style_label_up : label.style_label_down,
+                     color = bullish ? color.new(color.green, 0) : color.new(color.red, 0),
+                     textcolor = color.white, size = size.small)
+                if showSLTP
+                    line.new(bar_index, f.sl, bar_index + lineBars, f.sl, color = color.red, width = 1)
+                    line.new(bar_index, targetBody, bar_index + lineBars, targetBody, color = color.green, width = 1)
+                hasOpen := true
+                openSl  := f.sl
+                openTp  := targetBody
+                openDir := f.dir
+                if bullish
+                    buySignal := true
+                else
+                    sellSignal := true
+                // si no es válida (sin objetivo o R:R < mínimo) se descarta sin más
+
+activeFvgs := newActive
+
+// 3) detecta una FVG nueva en la ventana de 3 velas que termina en la actual
+if bar_index >= 2
+    originHigh = high[2]
+    originLow  = low[2]
+    formedHigh = high
+    formedLow  = low
+
+    if trend == "up" and originHigh < formedLow
+        zLow  = originHigh
+        zHigh = formedLow
+        slPx  = not na(legOriginLow) ? legOriginLow : originLow
+        b = showZones ? box.new(bar_index[2], zHigh, bar_index, zLow, border_color = color.new(color.teal, 30), bgcolor = color.new(color.teal, 85)) : na
+        array.push(activeFvgs, FVG.new("BUY", zLow, zHigh, zLow, zHigh, slPx, false, b))
+
+    else if trend == "down" and originLow > formedHigh
+        zLow  = formedHigh
+        zHigh = originLow
+        slPx  = not na(legOriginHigh) ? legOriginHigh : high[2]
+        b = showZones ? box.new(bar_index[2], zHigh, bar_index, zLow, border_color = color.new(color.maroon, 30), bgcolor = color.new(color.maroon, 85)) : na
+        array.push(activeFvgs, FVG.new("SELL", zLow, zHigh, zHigh, zLow, slPx, false, b))
+
+alertcondition(buySignal, title = "FVG BUY", message = "FVG H1: señal de COMPRA")
+alertcondition(sellSignal, title = "FVG SELL", message = "FVG H1: señal de VENTA")

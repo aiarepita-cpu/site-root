@@ -50,6 +50,15 @@ python3 run_backtest.py data/XAUUSD_H1.csv
 CSV esperado: columnas `timestamp,open,high,low,close` (nombres de
 columna flexibles, ver `engine/data_loader.py`).
 
+## Indicador para TradingView
+
+`pine/FVG_H1_Signals.pine` (Pine Script v5) replica exactamente esta
+misma lógica (BOS/CHoCH, origen del tramo para el SL, TP en el swing
+opuesto, filtro R:R ≥ 0.3) y pone una etiqueta BUY/SELL en el gráfico
+apenas se dispara una señal, con SL/TP dibujados. Pegar en Pine Editor
+sobre XAUUSD en temporalidad 1h. Trae `alertcondition` para BUY y SELL
+por si querés configurar alertas de TradingView.
+
 ## Pendiente
 
 No hay salida de red permitida en este entorno hacia fuentes de datos
