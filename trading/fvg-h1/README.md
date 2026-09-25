@@ -9,12 +9,15 @@ Estrategia (XAUUSD, H1):
 2. **FVG**: patrón ICT de 3 velas. Alcista si `vela1.high < vela3.low`;
    bajista si `vela1.low > vela3.high`. Solo se crea si coincide con la
    tendencia vigente en ese momento.
-3. **SL**: mecha del swing que originó el impulso al que pertenece ese
-   FVG — el swing low confirmado más reciente antes del FVG en compras,
-   el swing high confirmado más reciente antes del FVG en ventas. Si
-   todavía no hay un swing de ese tipo confirmado (fractal de 3 velas),
-   se usa como respaldo la mecha de la propia vela que originó el FVG
-   (siempre hay algo contra qué poner el SL, como mínimo esa vela).
+3. **SL**: mecha del swing que originó **todo el tramo (leg) actual**,
+   no solo el retroceso inmediato de este FVG puntual. Ese origen se fija
+   una sola vez, en el CHoCH que invierte la tendencia (swing low si pasa
+   a alcista, swing high si pasa a bajista), y se mantiene igual para
+   todos los FVG que se formen dentro del mismo tramo — incluso después
+   de BOS de continuación que rompen máximos/mínimos más nuevos. Solo se
+   reemplaza en el próximo CHoCH (cambio real de tendencia). Si todavía
+   no hay un swing de ese tipo confirmado (arranque de los datos), se usa
+   como respaldo la mecha de la propia vela que originó el FVG.
 4. **Invalidación**: cualquier mecha que toque/cruce el borde lejano del
    FVG (el límite del lado de `vela1`) lo descarta por completo, sin
    entrada.

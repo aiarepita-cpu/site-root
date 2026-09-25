@@ -4,24 +4,31 @@ from .swings import nearest_swing
 MIN_RR = 0.3
 
 
-def detect_new_fvg(candles: list[Candle], i: int, trend: str | None, swings: list[Swing]) -> FVG | None:
+def detect_new_fvg(
+    candles: list[Candle],
+    i: int,
+    trend: str | None,
+    leg_origin_low: Swing | None,
+    leg_origin_high: Swing | None,
+) -> FVG | None:
     """Looks at the 3-candle window ending at i (i-2, i-1, i) and returns a
     new FVG only if it forms in the same direction as `trend`.
 
-    SL = wick of the swing that started the impulse leg this FVG belongs
-    to (the swing low behind a bullish leg, the swing high behind a
-    bearish leg). If no fractal swing has been confirmed yet that far
-    back, the origin candle itself is the start of the move -- its own
-    wick is used as the fallback "swing" (an FVG always has *something*
-    to risk against, at minimum the candle that created it).
+    SL = wick of the swing that started the CURRENT structural leg (the
+    swing low/high in place at the moment of the BOS/CHoCH that put us
+    in this trend -- see TrendTracker.leg_origin_low/high), not just the
+    nearest small retracement before this particular FVG. It stays the
+    same for every FVG that forms within the same leg. If no such swing
+    exists yet (leg started right at the beginning of the data), the
+    origin candle's own wick is used as a fallback (an FVG always has
+    *something* to risk against, at minimum the candle that created it).
     """
     if i < 2 or trend is None:
         return None
     origin, _mid, formed = candles[i - 2], candles[i - 1], candles[i]
 
     if trend == "up" and origin.high < formed.low:
-        leg_start = nearest_swing(swings, before_index=formed.index, want="low")
-        sl_price = leg_start.price if leg_start is not None else origin.low
+        sl_price = leg_origin_low.price if leg_origin_low is not None else origin.low
         zone_low, zone_high = origin.high, formed.low
         return FVG(
             id=-1,
@@ -32,12 +39,11 @@ def detect_new_fvg(candles: list[Candle], i: int, trend: str | None, swings: lis
             zone_high=zone_high,
             far_edge=zone_low,     # a wick crossing below here invalidates
             near_edge=zone_high,   # must clear above here (wick incl.) to enter
-            sl_price=sl_price,   # wick of the swing (or origin candle) that started this leg
+            sl_price=sl_price,   # wick of the swing that started this leg
         )
 
     if trend == "down" and origin.low > formed.high:
-        leg_start = nearest_swing(swings, before_index=formed.index, want="high")
-        sl_price = leg_start.price if leg_start is not None else origin.high
+        sl_price = leg_origin_high.price if leg_origin_high is not None else origin.high
         zone_low, zone_high = formed.high, origin.low
         return FVG(
             id=-1,
@@ -48,7 +54,7 @@ def detect_new_fvg(candles: list[Candle], i: int, trend: str | None, swings: lis
             zone_high=zone_high,
             far_edge=zone_high,   # a wick crossing above here invalidates
             near_edge=zone_low,    # must clear below here (wick incl.) to enter
-            sl_price=sl_price,   # wick of the swing (or origin candle) that started this leg
+            sl_price=sl_price,   # wick of the swing that started this leg
         )
 
     return None
