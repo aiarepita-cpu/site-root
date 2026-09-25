@@ -107,24 +107,25 @@ def test_no_fvg_against_trend():
     print("test_no_fvg_against_trend: OK")
 
 
-def test_no_leg_start_swing_skips_fvg():
+def test_no_confirmed_swing_falls_back_to_origin_wick():
     # Trend is confirmed up (BOS at idx3), but no swing LOW has ever been
     # confirmed (price never dipped into a local minimum) by the time the
-    # bullish FVG would form at idx6: there is nothing to place the SL
-    # against, so the FVG must not be created at all, even though the gap
-    # pattern and the trend direction both check out.
+    # bullish FVG forms at idx6. An FVG always has *something* to risk
+    # against -- at minimum the wick of the candle that created it -- so
+    # the FVG must still be created, with SL = origin candle's own low.
     candles = [
         C(0, 100, 101, 99, 100),
         C(1, 100, 105, 99, 104),   # swing high candidate (105)
         C(2, 104, 104.5, 99, 104),
         C(3, 104, 112, 103, 111),  # BOS: close 111 > 105 => trend up
-        C(4, 111, 113, 108, 110),  # would-be FVG origin
+        C(4, 111, 113, 108, 110),  # FVG origin: low=108 -> fallback SL
         C(5, 110, 125, 109, 124),
-        C(6, 124, 130, 115, 129),  # would-be formed candle: origin.high(113) < formed.low(115)
+        C(6, 124, 130, 115, 129),  # formed candle: origin.high(113) < formed.low(115)
     ]
     trades, fvgs = run(candles)
-    assert len(fvgs) == 0
-    print("test_no_leg_start_swing_skips_fvg: OK")
+    fvg = next(f for f in fvgs if f.origin_index == 4)
+    assert fvg.sl_price == 108
+    print("test_no_confirmed_swing_falls_back_to_origin_wick: OK")
 
 
 if __name__ == "__main__":
@@ -134,5 +135,5 @@ if __name__ == "__main__":
     test_invalidated_by_wick_through_far_edge()
     test_rr_below_threshold_cancels_trade()
     test_no_fvg_against_trend()
-    test_no_leg_start_swing_skips_fvg()
+    test_no_confirmed_swing_falls_back_to_origin_wick()
     print("ALL TESTS PASSED")

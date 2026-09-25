@@ -12,8 +12,9 @@ Estrategia (XAUUSD, H1):
 3. **SL**: mecha del swing que originó el impulso al que pertenece ese
    FVG — el swing low confirmado más reciente antes del FVG en compras,
    el swing high confirmado más reciente antes del FVG en ventas. Si
-   todavía no hay un swing de ese tipo confirmado, el FVG no se crea (no
-   hay contra qué gestionar el riesgo).
+   todavía no hay un swing de ese tipo confirmado (fractal de 3 velas),
+   se usa como respaldo la mecha de la propia vela que originó el FVG
+   (siempre hay algo contra qué poner el SL, como mínimo esa vela).
 4. **Invalidación**: cualquier mecha que toque/cruce el borde lejano del
    FVG (el límite del lado de `vela1`) lo descarta por completo, sin
    entrada.
