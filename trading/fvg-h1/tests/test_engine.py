@@ -155,7 +155,62 @@ def test_no_confirmed_swing_falls_back_to_origin_wick():
     print("test_no_confirmed_swing_falls_back_to_origin_wick: OK")
 
 
+def _trend_series(candles, require_fvg_break):
+    from engine.swings import detect_swings
+    from engine.trend import TrendTracker
+    from engine.fvg_detector import detect_raw_fvg
+
+    tr = TrendTracker(detect_swings(candles, 1), 1,
+                      require_fvg_break=require_fvg_break, fvg_window=2)
+    out = []
+    for c in candles:
+        raw = detect_raw_fvg(candles, c.index)
+        if raw is not None:
+            tr.note_fvg(raw, c.index)
+        out.append(tr.update(c))
+    return out, tr
+
+
+def test_break_without_fvg_is_not_a_break():
+    # Price grinds above the swing high (110) with no imbalance anywhere:
+    # a close beyond it is not a valid break under the FVG rule.
+    candles = [
+        C(0, 100, 101, 99, 100),
+        C(1, 100, 110, 104, 108),  # swing high 110
+        C(2, 108, 109, 100, 103),
+        C(3, 103, 106, 102, 105),
+        C(4, 105, 108, 104, 107),
+        C(5, 107, 111, 106, 111),  # close 111 > 110, but no FVG anywhere
+        C(6, 111, 112, 108, 111),
+    ]
+    without, _ = _trend_series(candles, False)
+    with_rule, _ = _trend_series(candles, True)
+    assert without[-1] == "up"          # old behaviour: counts as a break
+    assert all(t is None for t in with_rule)  # new rule: never a break
+    print("test_break_without_fvg_is_not_a_break: OK")
+
+
+def test_break_with_displacement_counts_and_records_its_fvg():
+    candles = [
+        C(0, 100, 101, 99, 100),
+        C(1, 100, 110, 104, 108),  # swing high 110
+        C(2, 108, 109, 100, 103),
+        C(3, 103, 106, 102, 105),
+        C(4, 105, 118, 104, 117),  # displacement candle, close 117 > 110
+        C(5, 117, 120, 108, 119),  # FVG completes here: high[3]=106 < low[5]=108
+        C(6, 119, 121, 115, 120),
+    ]
+    with_rule, tr = _trend_series(candles, True)
+    # valid, but only confirmed once the FVG completes one candle later
+    assert with_rule[4] is None
+    assert with_rule[5] == "up"
+    assert tr.break_fvg_index == 5
+    print("test_break_with_displacement_counts_and_records_its_fvg: OK")
+
+
 if __name__ == "__main__":
+    test_break_without_fvg_is_not_a_break()
+    test_break_with_displacement_counts_and_records_its_fvg()
     test_sl_uses_leg_origin_not_nearest_retracement()
     test_leg_origin_survives_continuation_bos()
     test_tp_hit()

@@ -1,17 +1,29 @@
 from .models import Candle, Direction, FVG, FVGState, Trade
 from .swings import detect_swings
 from .trend import TrendTracker
-from .fvg_detector import detect_new_fvg, step_fvg
+from .fvg_detector import detect_new_fvg, detect_raw_fvg, step_fvg
 
 
-def run(candles: list[Candle], structure_n: int = 1, target_n: int = 1) -> tuple[list[Trade], list[FVG]]:
+def run(
+    candles: list[Candle],
+    structure_n: int = 1,
+    target_n: int = 1,
+    require_fvg_break: bool = False,
+    fvg_window: int = 2,
+    break_fvg_only: bool = False,
+) -> tuple[list[Trade], list[FVG]]:
     """`structure_n` sizes the fractal used for trend BOS/CHoCH and for
     the leg-origin SL; `target_n` sizes the (smaller) fractal used to
     pick the nearest opposite swing as TP.
+
+    `require_fvg_break`: a swing is only "broken" if the breaking move
+    displaced, leaving an FVG in the same direction (see TrendTracker).
+    `break_fvg_only`: trade only the FVG that validated the break that
+    started the current leg, instead of every trend-aligned FVG.
     """
     structure_swings = detect_swings(candles, structure_n)
     target_swings = structure_swings if target_n == structure_n else detect_swings(candles, target_n)
-    tracker = TrendTracker(structure_swings, structure_n)
+    tracker = TrendTracker(structure_swings, structure_n, require_fvg_break, fvg_window)
 
     fvgs: list[FVG] = []
     active: list[FVG] = []
@@ -19,8 +31,15 @@ def run(candles: list[Candle], structure_n: int = 1, target_n: int = 1) -> tuple
     open_trade: Trade | None = None
     next_fvg_id = 0
     next_trade_id = 0
+    seen_break_fvgs: set[int] = set()
 
     for i, candle in enumerate(candles):
+        # 0) raw FVG geometry for this candle, so the tracker can decide
+        #    whether a break displaced. No trend input here on purpose.
+        raw = detect_raw_fvg(candles, i)
+        if raw is not None:
+            tracker.note_fvg(raw, i)
+
         trend = tracker.update(candle)
 
         # 1) manage an already-open trade (only one at a time: while a
@@ -47,13 +66,37 @@ def run(candles: list[Candle], structure_n: int = 1, target_n: int = 1) -> tuple
                 still_active.append(fvg)
         active = still_active
 
-        # 3) look for a brand-new FVG on this candle
-        new_fvg = detect_new_fvg(candles, i, trend, tracker.leg_origin_low, tracker.leg_origin_high)
-        if new_fvg is not None:
-            new_fvg.id = next_fvg_id
-            next_fvg_id += 1
-            fvgs.append(new_fvg)
-            active.append(new_fvg)
+        # 3) look for a brand-new tradeable FVG
+        if break_fvg_only:
+            # only the FVG that validated this leg's break is tradeable.
+            # It may sit a couple of candles BEHIND this one (the break
+            # displaced before the close that confirmed it), in which
+            # case we activate it now and replay the candles in between
+            # so its state is honest -- we could not have watched it
+            # before knowing the leg had started.
+            bidx = tracker.break_fvg_index
+            if bidx is not None and bidx not in seen_break_fvgs:
+                seen_break_fvgs.add(bidx)
+                new_fvg = detect_new_fvg(
+                    candles, bidx, trend, tracker.leg_origin_low, tracker.leg_origin_high
+                )
+                if new_fvg is not None:
+                    for j in range(bidx + 1, i + 1):
+                        step_fvg(new_fvg, candles[j], target_swings, target_n)
+                    if new_fvg.state in (FVGState.WATCHING, FVGState.TOUCHED):
+                        new_fvg.id = next_fvg_id
+                        next_fvg_id += 1
+                        fvgs.append(new_fvg)
+                        active.append(new_fvg)
+        else:
+            new_fvg = detect_new_fvg(
+                candles, i, trend, tracker.leg_origin_low, tracker.leg_origin_high
+            )
+            if new_fvg is not None:
+                new_fvg.id = next_fvg_id
+                next_fvg_id += 1
+                fvgs.append(new_fvg)
+                active.append(new_fvg)
 
     return trades, fvgs
 

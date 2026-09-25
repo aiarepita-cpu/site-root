@@ -4,6 +4,23 @@ from .swings import nearest_swing
 MIN_RR = 0.3
 
 
+def detect_raw_fvg(candles: list[Candle], i: int) -> str | None:
+    """Purely geometric 3-candle FVG check on the window ending at i, with
+    NO trend filter: returns "up", "down" or None. Trend validation needs
+    to know about FVGs (a break only counts if it displaced), and FVG
+    tradeability needs to know the trend -- detecting the raw geometry
+    first breaks that circularity.
+    """
+    if i < 2:
+        return None
+    origin, formed = candles[i - 2], candles[i]
+    if origin.high < formed.low:
+        return "up"
+    if origin.low > formed.high:
+        return "down"
+    return None
+
+
 def detect_new_fvg(
     candles: list[Candle],
     i: int,
