@@ -1,0 +1,314 @@
+use rq_sdk::prelude::*;
+
+const MAX_ZONES: usize = 8;
+
+#[derive(Clone, Copy, Default)]
+struct Zone {
+    active: bool,
+    bullish: bool,
+    far_edge: f64,
+    near_edge: f64,
+    sl: f64,
+    touched: bool,
+    formed_index: usize,
+}
+
+#[strategy(name = "FVG Structure")]
+pub struct FvgStructure {
+    #[param(default = 2, min = 1, max = 6, title = "Fractal swing (vecinos por lado)")]
+    swing_n: i64,
+    #[param(default = 0.3, min = 0.0, max = 3.0, step = 0.05, title = "R:R minimo")]
+    min_rr: f64,
+    #[param(default = true, title = "Rompimiento exige FVG")]
+    require_fvg_break: bool,
+    #[param(default = 2, min = 0, max = 5, title = "Ventana FVG del rompimiento")]
+    fvg_window: i64,
+    #[param(default = 0.01, min = 0.001, max = 0.05, step = 0.001, title = "Riesgo por operacion")]
+    risk_fraction: f64,
+
+    // swings confirmados
+    last_high: f64,
+    last_high_idx: usize,
+    has_high: bool,
+    last_low: f64,
+    last_low_idx: usize,
+    has_low: bool,
+
+    // copias con una barra extra de retraso, para el objetivo de TP
+    // (replica el margen de swings.nearest_swing del backtester en Python)
+    cur_high_body: f64,
+    cur_has_high_body: bool,
+    cur_low_body: f64,
+    cur_has_low_body: bool,
+    tp_high_body: f64,
+    has_tp_high: bool,
+    tp_low_body: f64,
+    has_tp_low: bool,
+
+    // tendencia
+    trend_up: bool,
+    trend_down: bool,
+    broken_high_idx: usize,
+    has_broken_high: bool,
+    broken_low_idx: usize,
+    has_broken_low: bool,
+    leg_low: f64,
+    has_leg_low: bool,
+    leg_high: f64,
+    has_leg_high: bool,
+
+    // ultimo FVG crudo por direccion, para validar rompimientos
+    fvg_up_idx: usize,
+    has_fvg_up: bool,
+    fvg_dn_idx: usize,
+    has_fvg_dn: bool,
+
+    // rompimiento en espera de desplazamiento
+    pending: bool,
+    pending_up: bool,
+    pending_idx: usize,
+    pending_swing_idx: usize,
+    pending_leg: f64,
+    pending_has_leg: bool,
+
+    zones: [Zone; MAX_ZONES],
+}
+
+impl FvgStructure {
+    fn apply_break(&mut self, up: bool, swing_idx: usize, leg: f64, has_leg: bool) {
+        let reversal = if up { !self.trend_up } else { !self.trend_down };
+        if up {
+            self.trend_up = true;
+            self.trend_down = false;
+            self.broken_high_idx = swing_idx;
+            self.has_broken_high = true;
+            if reversal {
+                self.leg_low = leg;
+                self.has_leg_low = has_leg;
+            }
+        } else {
+            self.trend_down = true;
+            self.trend_up = false;
+            self.broken_low_idx = swing_idx;
+            self.has_broken_low = true;
+            if reversal {
+                self.leg_high = leg;
+                self.has_leg_high = has_leg;
+            }
+        }
+    }
+
+    fn displaced(&self, up: bool, break_idx: usize, window: usize) -> bool {
+        let lo = break_idx.saturating_sub(window);
+        let hi = break_idx + 1;
+        if up {
+            self.has_fvg_up && self.fvg_up_idx >= lo && self.fvg_up_idx <= hi
+        } else {
+            self.has_fvg_dn && self.fvg_dn_idx >= lo && self.fvg_dn_idx <= hi
+        }
+    }
+
+    fn store_zone(&mut self, z: Zone) {
+        for k in 0..MAX_ZONES {
+            if !self.zones[k].active {
+                self.zones[k] = z;
+                return;
+            }
+        }
+        // sin espacio: reemplaza la mas vieja
+        let mut oldest = 0usize;
+        for k in 1..MAX_ZONES {
+            if self.zones[k].formed_index < self.zones[oldest].formed_index {
+                oldest = k;
+            }
+        }
+        self.zones[oldest] = z;
+    }
+}
+
+impl Strategy for FvgStructure {
+    fn on_init(&mut self, _init: &mut Init) {}
+
+    fn on_bar(&mut self, ctx: &mut Ctx, bar: Bar) {
+        let n = self.swing_n.max(1) as usize;
+        let i = ctx.bar_index();
+        if i < 2 * n + 2 {
+            return;
+        }
+
+        // ---- 1) swing por fractal, confirmado exactamente n barras despues ----
+        let Some(cand) = ctx.bar(n) else { return };
+        let mut is_high = true;
+        let mut is_low = true;
+        for j in 1..=n {
+            let (Some(newer), Some(older)) = (ctx.bar(n - j), ctx.bar(n + j)) else {
+                return;
+            };
+            if cand.high <= newer.high || cand.high <= older.high {
+                is_high = false;
+            }
+            if cand.low >= newer.low || cand.low >= older.low {
+                is_low = false;
+            }
+        }
+        let cand_idx = i - n;
+        if is_high {
+            self.last_high = cand.high;
+            self.last_high_idx = cand_idx;
+            self.has_high = true;
+            self.cur_high_body = cand.open.max(cand.close);
+            self.cur_has_high_body = true;
+        }
+        if is_low {
+            self.last_low = cand.low;
+            self.last_low_idx = cand_idx;
+            self.has_low = true;
+            self.cur_low_body = cand.open.min(cand.close);
+            self.cur_has_low_body = true;
+        }
+
+        // ---- 2) geometria cruda del FVG, sin filtro de tendencia ----
+        let Some(origin) = ctx.bar(2) else { return };
+        if origin.high < bar.low {
+            self.fvg_up_idx = i;
+            self.has_fvg_up = true;
+        }
+        if origin.low > bar.high {
+            self.fvg_dn_idx = i;
+            self.has_fvg_dn = true;
+        }
+
+        // ---- 3) resolver un rompimiento que esperaba desplazamiento ----
+        let window = self.fvg_window.max(0) as usize;
+        if self.pending && i > self.pending_idx {
+            if self.displaced(self.pending_up, self.pending_idx, window) {
+                let (up, sw, leg, has_leg) = (
+                    self.pending_up,
+                    self.pending_swing_idx,
+                    self.pending_leg,
+                    self.pending_has_leg,
+                );
+                self.apply_break(up, sw, leg, has_leg);
+            }
+            self.pending = false;
+        }
+
+        // ---- 4) rompimiento de estructura por cierre ----
+        let broke_high = self.has_high
+            && bar.close > self.last_high
+            && (!self.has_broken_high || self.last_high_idx != self.broken_high_idx);
+        let broke_low = self.has_low
+            && bar.close < self.last_low
+            && (!self.has_broken_low || self.last_low_idx != self.broken_low_idx);
+
+        if broke_high || broke_low {
+            let up = broke_high;
+            let swing_idx = if up { self.last_high_idx } else { self.last_low_idx };
+            let leg = if up { self.last_low } else { self.last_high };
+            let has_leg = if up { self.has_low } else { self.has_high };
+
+            if !self.require_fvg_break || self.displaced(up, i, window) {
+                self.apply_break(up, swing_idx, leg, has_leg);
+            } else {
+                // el FVG todavia puede completarse en la barra siguiente
+                self.pending = true;
+                self.pending_up = up;
+                self.pending_idx = i;
+                self.pending_swing_idx = swing_idx;
+                self.pending_leg = leg;
+                self.pending_has_leg = has_leg;
+            }
+        }
+
+        // ---- 5) avanzar cada zona activa ----
+        let flat = ctx.position() == 0;
+        for k in 0..MAX_ZONES {
+            if !self.zones[k].active || i <= self.zones[k].formed_index {
+                continue;
+            }
+            let z = self.zones[k];
+            let wick = if z.bullish { bar.low } else { bar.high };
+
+            let crossed_far = if z.bullish {
+                wick <= z.far_edge
+            } else {
+                wick >= z.far_edge
+            };
+            if crossed_far {
+                self.zones[k].active = false;
+                continue;
+            }
+
+            let inside = if z.bullish {
+                wick <= z.near_edge
+            } else {
+                wick >= z.near_edge
+            };
+            if inside {
+                self.zones[k].touched = true;
+                continue;
+            }
+            if !self.zones[k].touched || !flat {
+                continue;
+            }
+
+            // la vela despejo la zona por completo tras haberla tocado
+            let entry = bar.close;
+            let risk = (entry - z.sl).abs();
+            let (has_target, target) = if z.bullish {
+                (self.has_tp_high, self.tp_high_body)
+            } else {
+                (self.has_tp_low, self.tp_low_body)
+            };
+            if risk > 0.0 && has_target {
+                let reward = if z.bullish {
+                    target - entry
+                } else {
+                    entry - target
+                };
+                if reward > 0.0 && reward / risk >= self.min_rr {
+                    let qty = ctx.size_risk_pct(self.risk_fraction, risk);
+                    if qty > 0 {
+                        if z.bullish {
+                            ctx.buy(qty).sl(z.sl).tp(target).send();
+                        } else {
+                            ctx.sell(qty).sl(z.sl).tp(target).send();
+                        }
+                    }
+                }
+            }
+            self.zones[k].active = false;
+        }
+
+        // ---- 6) nueva zona operable, alineada con la tendencia ----
+        if self.trend_up && origin.high < bar.low {
+            let sl = if self.has_leg_low { self.leg_low } else { origin.low };
+            self.store_zone(Zone {
+                active: true,
+                bullish: true,
+                far_edge: origin.high,
+                near_edge: bar.low,
+                sl,
+                touched: false,
+                formed_index: i,
+            });
+        } else if self.trend_down && origin.low > bar.high {
+            let sl = if self.has_leg_high { self.leg_high } else { origin.high };
+            self.store_zone(Zone {
+                active: true,
+                bullish: false,
+                far_edge: origin.low,
+                near_edge: bar.high,
+                sl,
+                touched: false,
+                formed_index: i,
+            });
+        }
+
+        // ---- 7) desplazar las copias del objetivo de TP una barra ----
+        self.tp_high_body = self.cur_high_body;
+        self.has_tp_high = self.cur_has_high_body;
+        self.tp_low_body = self.cur_low_body;
+        self.has_tp_low = self.cur_has_low_body;
+    }
+}
