@@ -75,3 +75,66 @@ no aparece es la ventaja.
 `martillo` es lo único que queda vivo (positivo en desarrollo y en cruzado,
 negativo en el holdout de oro). No alcanza para operarlo, pero es el único que
 justificaría una prueba más con datos frescos e independientes.
+
+
+---
+
+# Anexo — Estrategia Fibonacci (reel DdyNFhCohRO, otro creador)
+
+## Reglas extraídas
+
+XAUUSD. Tras un **CHoCH**, trazar Fibonacci sobre el tramo que lo produjo;
+comprar al retroceder a la **golden zone (0,5–0,618)**, stop debajo del 0,786,
+objetivo en la extensión **1,272**. El R:R queda fijado por la geometría en
+**2,699** (premio 0,772·tramo / riesgo 0,286·tramo), con punto de equilibrio
+teórico en 27,0% de acierto.
+
+## Por qué este caso importa más que el resultado
+
+La primera medición dio **PF 1,79 en desarrollo, 1,55 en holdout y 1,64 cruzado
+en 5 activos**. Siete conjuntos independientes, todos espectaculares. Era falso.
+
+Lo delató un **control sobre ruido**: correr el detector sobre caminatas
+aleatorias, donde ninguna estrategia puede tener ventaja. Daba PF 2,02 — mejor
+que sobre datos reales. Eso prueba bug, no edge.
+
+### Dos bugs encontrados
+
+1. **Selección asimétrica en la vela de entrada.** Si esa vela tocaba el stop,
+   descartaba la operación entera; si tocaba el objetivo, la conservaba.
+   Eliminaba perdedores inmediatos y guardaba ganadores inmediatos. Sobre ruido,
+   eso solo llevaba el acierto del 27% teórico al **42%**.
+2. **Objetivo acreditado con el máximo de la vela de entrada.** En una compra se
+   entra en el mínimo de la vela, y su máximo suele ser *anterior* al toque:
+   cobraba ganancias que no pudieron ocurrir. Añadía otros ~5 puntos.
+
+### El punto de comparación correcto
+
+Ya corregido, el motor da **31%** sobre ruido en vez del 27% teórico. No es un
+bug: simular órdenes límite con velas concede un llenado favorable (se entra en
+el mínimo y la vela cierra más arriba). La consecuencia metodológica es que
+**el patrón de referencia no es el 27% teórico sino un control con niveles
+aleatorios**, misma geometría y mismo motor.
+
+## Resultado final
+
+| Conjunto | Fib: n | acierto | expR | Aleatorio: expR | Diferencia |
+|---|---:|---:|---:|---:|---:|
+| Desarrollo 09-22 | 5336 | 21,4% | −0,208 | −0,088 | −0,120 |
+| Holdout 23-26 | 1457 | 19,8% | −0,266 | −0,020 | −0,246 |
+| EURUSD | 1015 | 19,9% | −0,264 | −0,017 | −0,247 |
+| GBPUSD | 1255 | 19,3% | −0,287 | −0,279 | −0,008 |
+| USDJPY | 1102 | 22,1% | −0,181 | −0,058 | −0,123 |
+| AUDUSD | 1198 | 22,0% | −0,185 | +0,009 | −0,194 |
+| Plata | 849 | 23,6% | −0,129 | −0,167 | +0,038 |
+| **Agregado** | **12212** | **21,2%** | **−0,217** | **−0,085** | **−0,132** |
+
+IC 95% Fibonacci [−0,244, −0,191] · IC 95% aleatorio [−0,147, −0,024]. **No se
+solapan.**
+
+La estrategia no solo pierde: pierde **significativamente más que poner los
+niveles al azar**. Con 21,2% de acierto contra un equilibrio de 27,0%, queda casi
+6 puntos por debajo de lo necesario.
+
+Los 6 detectores del canal anterior usan modo `break_return` (entrada al cierre
+de la vela) y no estaban afectados por estos bugs: sus cifras no cambiaron.

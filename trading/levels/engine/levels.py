@@ -35,6 +35,11 @@ class Level:
     # objetivo como multiplo del riesgo, para los reels que fijan "al doble"
     # en vez de apuntar a un extremo previo. Se usa solo si tp_price es None.
     tp_r_multiple: float | None = None
+    # "break_return": romper con cuerpo, esperar el regreso y confirmar
+    #                 (la mecanica de los 9 reels de asimetricos)
+    # "zone_touch":   entrar al tocar el nivel, sin ruptura previa
+    #                 (la estrategia Fibonacci: orden limite en la golden zone)
+    entry_mode: str = "break_return"
 
 
 @dataclass
@@ -262,3 +267,53 @@ DETECTORES = {
     "barrido_diario": daily_sweep,
     "rango_sesion": session_range,
 }
+
+
+# ---------------------------------------------------------------- Fibonacci
+def fib_golden_zone(candles: list[Candle], i: int, ctx: Ctx,
+                    lo_ratio: float = 0.5, hi_ratio: float = 0.618,
+                    sl_ratio: float = 0.786, tp_ratio: float = 1.272) -> list[Level]:
+    """Reel DdyNFhCohRO — retroceso a la golden zone tras un CHoCH.
+
+    Tras un cambio de caracter se traza Fibonacci sobre el tramo que lo
+    produjo y se compra al retroceder a la zona 0.5-0.618, con el stop
+    debajo del 0.786 y el objetivo en la extension 1.272.
+
+    El nivel publicado es el borde superior de la zona (el 0.5): el motor
+    entra al tocarlo, que es el equivalente a dejar la orden limite ahi.
+    """
+    highs, lows = ctx.avail_highs(i), ctx.avail_lows(i)
+    if not highs or not lows:
+        return []
+    c = candles[i]
+    out: list[Level] = []
+
+    # --- CHoCH alcista: el cierre supera el ultimo swing high ---
+    h_idx, h_price = highs[-1]
+    prior_lows = [(k, p) for k, p in lows if k < h_idx]
+    if prior_lows and c.close > h_price and candles[i - 1].close <= h_price:
+        x_idx, x_price = prior_lows[-1]
+        leg = h_price - x_price
+        if leg > 0:
+            out.append(Level(
+                i, h_price - lo_ratio * leg, BUY,
+                h_price - sl_ratio * leg,
+                x_price + tp_ratio * leg,
+                "fib_golden", 48, entry_mode="zone_touch"))
+
+    # --- CHoCH bajista: el cierre perfora el ultimo swing low ---
+    l_idx, l_price = lows[-1]
+    prior_highs = [(k, p) for k, p in highs if k < l_idx]
+    if prior_highs and c.close < l_price and candles[i - 1].close >= l_price:
+        x_idx, x_price = prior_highs[-1]
+        leg = x_price - l_price
+        if leg > 0:
+            out.append(Level(
+                i, l_price + lo_ratio * leg, SELL,
+                l_price + sl_ratio * leg,
+                x_price - tp_ratio * leg,
+                "fib_golden", 48, entry_mode="zone_touch"))
+    return out
+
+
+DETECTORES["fib_golden"] = fib_golden_zone

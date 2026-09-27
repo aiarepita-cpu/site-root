@@ -78,6 +78,35 @@ def run(candles: list[Candle], detector, cfg: Config = Config(),
                 continue
             d = lv.direction
 
+            # --- entrada por toque de zona (Fibonacci): sin ruptura previa ---
+            if lv.entry_mode == "zone_touch":
+                touched = bar.low <= lv.price if d == BUY else bar.high >= lv.price
+                if not touched:
+                    still.append(a)
+                    continue
+                if open_trade is not None or d not in cfg.allow_directions:
+                    still.append(a)
+                    continue
+                t = _open_trade(lv, bar, i, cfg, entry_price=lv.price)
+                if t is not None:
+                    trades.append(t)
+                    # La vela de entrada se resuelve AQUI, y de forma simetrica.
+                    # Descartar solo las que tocan el stop (y quedarse con las
+                    # que tocan el objetivo) elimina los perdedores inmediatos
+                    # y conserva los ganadores inmediatos: sobre ruido puro eso
+                    # solo ya llevaba el acierto del 27% teorico al 42%.
+                    # En la vela de entrada solo se puede acreditar el STOP.
+                    # El extremo favorable de esa vela (su maximo en una compra)
+                    # suele ser ANTERIOR al toque que nos hizo entrar, asi que
+                    # cobrarlo como objetivo seria una ganancia imposible: eso
+                    # solo llevaba el acierto sobre ruido del 27% teorico al 31%.
+                    hit_sl = bar.low <= t.sl_price if d == BUY else bar.high >= t.sl_price
+                    if hit_sl:
+                        t.outcome, t.exit_index = "SL", i
+                    else:
+                        open_trade = t
+                continue
+
             if a.broken_at is None:
                 # ruptura con CUERPO
                 broke = bar.close > lv.price if d == BUY else bar.close < lv.price
@@ -123,8 +152,9 @@ def run(candles: list[Candle], detector, cfg: Config = Config(),
     return trades
 
 
-def _open_trade(lv: Level, bar: Candle, i: int, cfg: Config) -> Trade | None:
-    entry = bar.close
+def _open_trade(lv: Level, bar: Candle, i: int, cfg: Config,
+                entry_price: float | None = None) -> Trade | None:
+    entry = bar.close if entry_price is None else entry_price
     risk = abs(entry - lv.sl_price)
     if risk <= 0:
         return None

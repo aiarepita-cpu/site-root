@@ -171,6 +171,58 @@ def test_objetivo_por_multiplo_de_riesgo():
     print("test_objetivo_por_multiplo_de_riesgo: OK")
 
 
+def test_zone_touch_entra_al_tocar_sin_ruptura():
+    # nivel 100 en modo zone_touch: entra en la vela que lo toca, al precio
+    # del nivel, sin necesidad de ruptura ni confirmacion previa
+    serie = [
+        C(0, 105, 106, 104, 105),
+        C(1, 105, 106, 104, 105),
+        C(2, 105, 106,  99, 103),   # toca 100 -> entrada a 100
+        C(3, 103, 118, 102, 117),   # TP 116
+    ]
+    def det(candles, i, ctx):
+        return [Level(1, 100.0, BUY, 92.0, 116.0, "fib",
+                      entry_mode="zone_touch")] if i == 1 else []
+    t = run(serie, det)
+    assert len(t) == 1
+    assert t[0].entry_price == 100.0 and t[0].outcome == "TP"
+    print("test_zone_touch_entra_al_tocar_sin_ruptura: OK")
+
+
+def test_zone_touch_resuelve_la_vela_de_entrada_simetricamente():
+    """La vela de entrada se resuelve en el acto, gane o pierda.
+
+    Descartar solo las velas que tocan el stop, conservando las que tocan
+    el objetivo, elimina los perdedores inmediatos y deja los ganadores
+    inmediatos. Sobre ruido puro ese sesgo solo ya llevaba el acierto del
+    27% teorico al 42%, con un profit factor aparente de 2,0.
+    """
+    def det(candles, i, ctx):
+        return [Level(1, 100.0, BUY, 92.0, 116.0, "fib",
+                      entry_mode="zone_touch")] if i == 1 else []
+
+    # la vela de entrada perfora el stop -> perdida registrada, no descartada
+    perdedora = [
+        C(0, 105, 106, 104, 105), C(1, 105, 106, 104, 105),
+        C(2, 105, 106,  90, 103),   # toca 100 y tambien el SL 92
+        C(3, 103, 118, 102, 117),
+    ]
+    t = run(perdedora, det)
+    assert len(t) == 1 and t[0].outcome == "SL"
+
+    # la vela de entrada "alcanza" el objetivo: NO se acredita, porque su
+    # maximo pudo ser anterior al toque de entrada. Queda abierta.
+    ambigua = [
+        C(0, 105, 106, 104, 105), C(1, 105, 106, 104, 105),
+        C(2, 105, 120,  99, 118),   # toca 100 y su maximo supera el TP 116
+        C(3, 118, 119, 117, 118),
+    ]
+    t = run(ambigua, det)
+    assert len(t) == 1
+    assert t[0].exit_index == 3, "no debe acreditarse en la vela de entrada"
+    print("test_zone_touch_resuelve_la_vela_de_entrada_simetricamente: OK")
+
+
 def test_summarize_aplica_costos():
     serie = [
         C(0, 95, 96, 94, 95), C(1, 95, 97, 94, 96),
@@ -196,5 +248,7 @@ if __name__ == "__main__":
     test_detector_ayer_cierre_respeta_el_sesgo()
     test_detector_martillo_exige_mecha_larga()
     test_objetivo_por_multiplo_de_riesgo()
+    test_zone_touch_entra_al_tocar_sin_ruptura()
+    test_zone_touch_resuelve_la_vela_de_entrada_simetricamente()
     test_summarize_aplica_costos()
     print("TODOS LOS TESTS PASARON")
