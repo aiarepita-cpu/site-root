@@ -46,6 +46,10 @@ class Config:
     max_rr: float = 20.0          # descarta objetivos absurdos
     cost_per_trade_r: float = 0.0  # costo en R, aplicado al resultado
     allow_directions: tuple = (BUY, SELL)
+    # Como se resuelve una vela que toca AMBAS barreras. "sl" es el peor caso
+    # y el que se usa para medir; "tp" existe solo para cuantificar cuanto de
+    # un resultado depende de la convencion (ver noise_control.py --intrabar).
+    intrabar: str = "sl"
 
 
 def run(candles: list[Candle], detector, cfg: Config = Config(),
@@ -63,7 +67,11 @@ def run(candles: list[Candle], detector, cfg: Config = Config(),
             d = open_trade.direction
             hit_sl = bar.low <= open_trade.sl_price if d == BUY else bar.high >= open_trade.sl_price
             hit_tp = bar.high >= open_trade.tp_price if d == BUY else bar.low <= open_trade.tp_price
-            if hit_sl:                       # peor caso ante ambiguedad intrabarra
+            if hit_sl and hit_tp:            # ambiguedad intrabarra
+                open_trade.outcome = "SL" if cfg.intrabar == "sl" else "TP"
+                open_trade.exit_index = i
+                open_trade = None
+            elif hit_sl:
                 open_trade.outcome, open_trade.exit_index = "SL", i
                 open_trade = None
             elif hit_tp:
