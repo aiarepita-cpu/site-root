@@ -39,6 +39,8 @@ class Level:
     #                 (la mecanica de los 9 reels de asimetricos)
     # "zone_touch":   entrar al tocar el nivel, sin ruptura previa
     #                 (la estrategia Fibonacci: orden limite en la golden zone)
+    # "zone_touch_close": igual, pero entrando al cierre de la vela del toque,
+    #                 para que no quede ninguna ambiguedad intrabarra
     entry_mode: str = "break_return"
 
 

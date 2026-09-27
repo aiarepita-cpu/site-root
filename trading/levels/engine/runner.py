@@ -87,7 +87,7 @@ def run(candles: list[Candle], detector, cfg: Config = Config(),
             d = lv.direction
 
             # --- entrada por toque de zona (Fibonacci): sin ruptura previa ---
-            if lv.entry_mode == "zone_touch":
+            if lv.entry_mode in ("zone_touch", "zone_touch_close"):
                 touched = bar.low <= lv.price if d == BUY else bar.high >= lv.price
                 if not touched:
                     still.append(a)
@@ -95,7 +95,15 @@ def run(candles: list[Candle], detector, cfg: Config = Config(),
                 if open_trade is not None or d not in cfg.allow_directions:
                     still.append(a)
                     continue
-                t = _open_trade(lv, bar, i, cfg, entry_price=lv.price)
+                # "zone_touch_close" entra al CIERRE de la vela del toque en
+                # vez de al precio del nivel. Pierde algo de entrada, pero la
+                # vela del toque queda enteramente en el pasado y desaparece
+                # toda asimetria de resolucion intrabarra: es el unico modo de
+                # medir esta estrategia sin el lastre de la regla conservadora
+                # (que sobre ruido cuesta -0,29R y confunde la comparacion).
+                al_cierre = lv.entry_mode == "zone_touch_close"
+                t = _open_trade(lv, bar, i, cfg,
+                                entry_price=None if al_cierre else lv.price)
                 if t is not None:
                     trades.append(t)
                     # La vela de entrada se resuelve AQUI, y de forma simetrica.
@@ -108,7 +116,8 @@ def run(candles: list[Candle], detector, cfg: Config = Config(),
                     # suele ser ANTERIOR al toque que nos hizo entrar, asi que
                     # cobrarlo como objetivo seria una ganancia imposible: eso
                     # solo llevaba el acierto sobre ruido del 27% teorico al 31%.
-                    hit_sl = bar.low <= t.sl_price if d == BUY else bar.high >= t.sl_price
+                    hit_sl = (not al_cierre) and (
+                        bar.low <= t.sl_price if d == BUY else bar.high >= t.sl_price)
                     if hit_sl:
                         t.outcome, t.exit_index = "SL", i
                     else:

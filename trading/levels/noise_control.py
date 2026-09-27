@@ -34,7 +34,8 @@ from datetime import datetime, timedelta
 sys.path.insert(0, ".")
 
 from engine.candles import Candle, load_csv
-from engine.levels import BUY, SELL, DETECTORES, Level, build_ctx
+from engine.levels import (BUY, SELL, DETECTORES, Level, build_ctx,
+                           fib_golden_zone)
 from engine.runner import Config, run
 
 BARRAS = 60_000
@@ -106,6 +107,21 @@ def nivel_aleatorio_break(candles, i, ctx, rnd=random.Random(1234)):
     return [Level(i, price, SELL, price + 0.4 * L, price - 0.8 * L, "rnd", 48)]
 
 
+def fib_al_cierre(candles, i, ctx):
+    """fib_golden con entrada al cierre de la vela del toque.
+
+    La regla conservadora de `zone_touch` (en la vela del toque solo puede
+    acreditarse el stop) cuesta -0,29R sobre ruido, asi que mezcla el
+    resultado del detector con el lastre del motor. Entrando al cierre la
+    vela del toque queda en el pasado y el lastre desaparece.
+    """
+    out = []
+    for lv in fib_golden_zone(candles, i, ctx):
+        lv.entry_mode = "zone_touch_close"
+        out.append(lv)
+    return out
+
+
 def bootstrap_ci(xs, n=3000, seed=17):
     rnd = random.Random(seed)
     b = sorted(sum(rnd.choice(xs) for _ in range(len(xs))) / len(xs) for _ in range(n))
@@ -158,19 +174,25 @@ def main() -> None:
     ap.add_argument("--datos", default=DATOS)
     ap.add_argument("--intrabar", default="sl", choices=["sl", "tp"])
     ap.add_argument("--comparar", action="store_true")
+    ap.add_argument("--series", type=int, default=SERIES,
+                    help="caminatas por detector; subirlo estrecha el IC")
+    ap.add_argument("--fib-al-cierre", action="store_true",
+                    help="mide fib_golden entrando al cierre de la vela del toque")
     args = ap.parse_args()
     cfg = Config(intrabar=args.intrabar)
 
     sigma = volatilidad_real(args.datos)
     print(f"volatilidad horaria calibrada sobre datos reales: {sigma*100:.4f}%")
-    print(f"{SERIES} caminatas x {BARRAS:,} barras por detector")
+    print(f"{args.series} caminatas x {BARRAS:,} barras por detector")
     print(f"vela que toca ambas barreras -> se acredita {args.intrabar.upper()}\n")
 
-    series = [caminata(BARRAS, sigma, s) for s in range(1, SERIES + 1)]
+    series = [caminata(BARRAS, sigma, s) for s in range(1, args.series + 1)]
     ctxs = [build_ctx(s) for s in series]
 
     objetivo = dict(DETECTORES)
     objetivo["[control aleatorio]"] = nivel_aleatorio_break
+    if args.fib_al_cierre:
+        objetivo["fib_golden"] = fib_al_cierre
     if args.detectores:
         objetivo = {k: v for k, v in objetivo.items() if k in args.detectores}
 
