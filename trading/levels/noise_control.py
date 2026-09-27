@@ -62,18 +62,34 @@ def volatilidad_real(path: str) -> float:
     return (sum(r * r for r in rets) / len(rets)) ** 0.5
 
 
+SUBPASOS = 12
+
+
 def caminata(n: int, sigma: float, seed: int) -> list[Candle]:
-    """Caminata aleatoria sin memoria, con OHLC construido de 4 subpasos."""
+    """Caminata aleatoria, con la barra construida de subpasos ACUMULADOS.
+
+    El detalle importa mas que todo el resto del archivo. Una primera version
+    sorteaba los 4 subpasos cada uno desde la APERTURA en vez de desde el
+    subpaso anterior. Eso no es una caminata: dentro de la barra el precio
+    revierte a la apertura, asi que las mechas se inflan y se retraen. Con
+    mechas espurias la barrera mas cercana se toca de mas, y como el stop esta
+    a 1R, un detector con objetivo lejano perdia sistematicamente. Daba hasta
+    -0,27R sobre ruido puro y parecia un sesgo pesimista del motor.
+
+    Con subpasos acumulados el camino es una martingala de verdad y la
+    expectativa de cualquier par de barreras vuelve a ser cero.
+    """
     rnd = random.Random(seed)
+    paso = sigma / SUBPASOS ** 0.5
     px, out = 2000.0, []
     t0 = datetime(2010, 1, 4)          # arranca lunes
     for i in range(n):
         o = px
-        pasos = [o * math.exp(rnd.gauss(0, sigma / 2)) for _ in range(4)]
-        c = pasos[-1]
-        out.append(Candle(i, t0 + timedelta(hours=i), o,
-                          max([o, c] + pasos), min([o, c] + pasos), c))
-        px = c
+        hi = lo = o
+        for _ in range(SUBPASOS):
+            px *= math.exp(rnd.gauss(0, paso))
+            hi, lo = max(hi, px), min(lo, px)
+        out.append(Candle(i, t0 + timedelta(hours=i), o, hi, lo, px))
     return out
 
 
