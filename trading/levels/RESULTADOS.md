@@ -138,3 +138,81 @@ niveles al azar**. Con 21,2% de acierto contra un equilibrio de 27,0%, queda cas
 
 Los 6 detectores del canal anterior usan modo `break_return` (entrada al cierre
 de la vela) y no estaban afectados por estos bugs: sus cifras no cambiaron.
+
+---
+
+# Anexo — Auditoría del control de ruido
+
+El control encontró dos bugs reales, ambos en el propio control, y dejó un
+residuo sin explicar. Conviene registrar las tres cosas.
+
+## Bug 1 — el generador no era una caminata
+
+Sorteaba los subpasos de cada vela desde la APERTURA en vez de desde el
+subpaso anterior. Dentro de la barra el precio revertía a la apertura, las
+mechas se inflaban y se retraían, y la barrera más cercana se tocaba de más.
+Con el stop a 1R, todo detector con objetivo lejano perdía sistemáticamente:
+hasta −0,27R, que parecía un sesgo pesimista del motor.
+
+Lo delataron dos señales. `--intrabar tp` daba cifras idénticas al dígito, o
+sea que la ambigüedad intrabarra no ocurría nunca y la primera explicación era
+falsa; y el signo del sesgo seguía al R:P. Corregido con subpasos acumulados.
+
+## Bug 2 — la resolución intrabarra fabricaba sesgo
+
+Con 12 subpasos, `barrido_diario` daba +0,104 sobre ruido. Con 48, +0,008. Era
+discretización: el camino se asoma más allá de una barrera entre subpasos y no
+queda registrado, y la barrera cercana se aproxima mucho más seguido que el
+objetivo.
+
+Hay una tensión de calibración que no se resuelve con una caminata simple: el
+oro real tiene rango/volatilidad 1,274 y un browniano continuo 1,596. Doce
+subpasos aciertan la forma de la vela real pero resuelven mal las barreras;
+192 resuelven bien pero dan velas más anchas. Para detectar bugs manda la
+limpieza mecánica: resolución alta, y leer contra el control, no contra cero.
+
+## El residuo de `hombro`, sin explicar
+
+Queda +0,0251R sobre ruido, IC95 [+0,0073, +0,0429] sobre 36.877 operaciones
+(medición única preregistrada, semillas nunca usadas). Todos los componentes
+verifican limpio:
+
+| verificación | resultado |
+|---|---|
+| resolución operación por operación contra replay independiente | 0 errores en 18.873 |
+| decisión de entrada reproducible truncando la serie en la entrada | 400/400 |
+| barreras con origen en velas previas | 0 violaciones |
+| entrada igual al cierre de su barra | 0 violaciones |
+| caminata aritmética (martingala exacta) vs geométrica | idénticas |
+| geometría fija, R:P de 1 a 8 | ≤0,28σ del equilibrio 1/(1+rr) |
+| continuación fresca e independiente | +0,0099, cero adentro |
+| bootstrap independiente vs por bloques | mismo ancho |
+
+Cinco hipótesis cayeron: mechas espurias, amplificación por R:P, intervalo
+subestimado por autocorrelación, convexidad log/lineal, e información futura.
+
+Dos advertencias sobre este número. Se midió unas ocho veces con distintas
+semillas antes de preregistrar, y la magnitud cayó de +0,086 a +0,025 al
+triplicar la muestra y quitar la selección: es la firma de la maldición del
+ganador. Y el control de la medición final quedó en R:P 1,85 contra 2,98 de
+`hombro`, porque en modo `break_return` la entrada no es en el cierre de la
+barra del nivel sino en el de una confirmación posterior.
+
+**Consecuencia práctica.** El residuo es la octava parte de los efectos que se
+miden sobre datos reales, y `--comparar` lo neutraliza: mide cada detector
+contra SU PROPIO ruido emparejado por cubo de R:P, así que lo resta sea cual
+sea su origen. Con esa corrección, `hombro` sobre datos reales da peor que su
+propio ruido en desarrollo (−0,170) y en cruzado (−0,150).
+
+## Corrección a la conclusión sobre Fibonacci
+
+Arriba se afirma que Fibonacci "pierde significativamente más que poner los
+niveles al azar". **Esa comparación era inválida**: contrastaba una estrategia
+de orden límite con R:P 2,70 contra un control de entrada al cierre con R:P
+1,21, con modo de entrada distinto. Contra su propio ruido emparejado por R:P,
+Fibonacci sale MEJOR que su línea base en desarrollo (+0,079R) y en cruzado
+(+0,073R), e indistinguible en holdout.
+
+Eso tampoco la salva: su línea base es −0,2865R, y ese número es el costo de
+la regla conservadora de la vela del toque, no una propiedad del mercado. Su
+expectativa absoluta sigue siendo −0,21R.
