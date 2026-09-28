@@ -216,6 +216,7 @@ def cargar_reales():
 
 
 def main() -> None:
+    global SUBPASOS
     ap = argparse.ArgumentParser()
     ap.add_argument("detectores", nargs="*")
     ap.add_argument("--datos", default=DATOS)
@@ -223,15 +224,16 @@ def main() -> None:
     ap.add_argument("--comparar", action="store_true")
     ap.add_argument("--barrido-rr", action="store_true",
                     help="mide el sesgo del motor en funcion del R:P")
-    ap.add_argument("--subpasos", type=int, default=SUBPASOS)
+    ap.add_argument("--subpasos", type=int, default=None,
+                    help="resolucion intrabarra de la caminata")
     ap.add_argument("--series", type=int, default=SERIES,
                     help="caminatas por detector; subirlo estrecha el IC")
     ap.add_argument("--fib-al-cierre", action="store_true",
                     help="mide fib_golden entrando al cierre de la vela del toque")
     args = ap.parse_args()
     cfg = Config(intrabar=args.intrabar)
-    global SUBPASOS
-    SUBPASOS = args.subpasos
+    if args.subpasos:
+        SUBPASOS = args.subpasos
 
     sigma = volatilidad_real(args.datos)
     print(f"volatilidad horaria calibrada sobre datos reales: {sigma*100:.4f}%")
