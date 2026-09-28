@@ -216,3 +216,58 @@ Fibonacci sale MEJOR que su línea base en desarrollo (+0,079R) y en cruzado
 Eso tampoco la salva: su línea base es −0,2865R, y ese número es el costo de
 la regla conservadora de la vela del toque, no una propiedad del mercado. Su
 expectativa absoluta sigue siendo −0,21R.
+
+---
+
+# Anexo — Escalera del CHoCH (reel Dd0y-0HhK55, tercer creador)
+
+## Qué es
+
+El video se titula "USE this Fibo for Sniper Entry" y **no es un Fibonacci**.
+Medidos los precios de las 20 líneas etiquetadas en los dos ejemplos, la
+herramienta está anclada en el tramo del CHoCH y los niveles caen en múltiplos
+exactos de **medio tramo**: −3,5 −3 −1,5 −1 0 +1 +2 +3 +3,5 +5 +5,5. Un
+ejemplo tiene tramo 6,820 y el otro 8,268, y la rejilla coincide al tercer
+decimal en los dos. Un Fibonacci tiene los niveles desigualmente espaciados
+(0,236 / 0,382 / 0,5 / 0,618 / 0,786); esto es uniforme.
+
+Las zonas grises del video son las bandas de medio tramo en ±3/3,5 y +5/5,5.
+Con entrada en +5, stop en +5,5 y objetivo en +3 el R:P da 4,0, que es lo que
+muestran dos de las cajas de posición (4,06 y 3,38). Ese R:P no se eligió: salió
+de la rejilla y coincidió, lo que respalda la lectura de la geometría.
+
+Lo que aporta frente a la estrategia Fibonacci del anexo anterior es el filtro
+de **inducement**: el swing high tiene que haber barrido el high previo antes
+del CHoCH.
+
+## Control de ruido, corrido ANTES de mirar datos reales
+
+| detector | n | acierto | rr | expR | IC95 | veredicto |
+|---|---:|---:|---:|---:|---|---|
+| escalera | 3.617 | 21,0% | 5,15 | +0,0347 | [−0,0382, +0,1085] | neutro |
+| control | 9.890 | 47,5% | 1,21 | +0,0019 | [−0,0193, +0,0240] | neutro |
+
+Pasa: el cero está dentro. Con la salvedad de que 3.617 operaciones sobre
+720.000 barras dejan un intervalo ancho, que no descarta un sesgo de +0,11R.
+
+## Resultado contra su propio ruido
+
+| conjunto | n | expR | ruido | exceso | IC95 | veredicto |
+|---|---:|---:|---:|---:|---|---|
+| desarrollo 09-22 | 447 | −0,199 | +0,031 | −0,230 | [−0,414, −0,047] | peor que ruido |
+| holdout 23-26 | 113 | +0,110 | +0,029 | +0,081 | [−0,360, +0,597] | indistinguible |
+| cruzado 5 activos | 422 | −0,051 | +0,030 | −0,081 | [−0,275, +0,135] | indistinguible |
+
+**Sin ventaja en ningún conjunto**, y negativa donde hay más datos.
+
+## El muro de tamaño muestral
+
+Con R:P 5,15 la desviación del resultado por operación es ≈2R. Para detectar
+una ventaja real de +0,10R con 80% de potencia hacen falta **~3.100
+operaciones por conjunto**. Hay 447 en catorce años de oro horario, o sea unas
+32 al año: llegar a 3.100 tomaría cerca de un siglo.
+
+Es el mismo muro que mató la estrategia FVG. Una estrategia que opera 32 veces
+al año con R:P 5 no es verificable con los datos que existen, con edge o sin
+él. Eso no es un resultado sobre esta escalera en particular: es una propiedad
+de cualquier sistema de esa frecuencia y esa dispersión.
