@@ -122,6 +122,53 @@ def fib_al_cierre(candles, i, ctx):
     return out
 
 
+def barrido_rr(sigma: float, series_n: int) -> None:
+    """Mide el sesgo del motor en funcion del R:P, con geometria fija.
+
+    El detector de este barrido no lee el grafico: coloca la entrada en el
+    cierre de una barra cada 40, riesgo fijo del 0,4% del precio y objetivo a
+    un multiplo dado. Sobre una martingala se gana con probabilidad
+    1/(1+rr) exactamente, asi que el exceso de acierto mide el sesgo del
+    motor sin ninguna decision de estrategia de por medio.
+
+    Es la pieza que decide si un "detector optimista" lo es de verdad: si el
+    exceso crece con el R:P, el sesgo es mecanico y lo comparten todos los
+    detectores, y la referencia correcta no es el cero sino el control
+    emparejado por R:P.
+    """
+    series = [caminata(BARRAS, sigma, k) for k in range(1, series_n + 1)]
+    ctxs = [build_ctx(s) for s in series]
+    print(f"{'rr':>5} {'n':>6} {'acierto':>8} {'1/(1+rr)':>9} {'exceso':>8} "
+          f"{'sigmas':>7} {'expR':>9} {'IC95 de expR':>21} {'dur':>6}")
+    print("-" * 92)
+    for objetivo in (1.0, 2.0, 3.0, 5.0, 8.0):
+        rnd = random.Random(7)
+
+        def det(candles, i, ctx, _o=objetivo, _r=rnd):
+            if i % 40 or i < 10:
+                return []
+            c = candles[i]
+            L = c.close * 0.004
+            if _r.random() < 0.5:
+                return [Level(i, c.close, BUY, c.close - L, c.close + _o * L, "x", 96)]
+            return [Level(i, c.close, SELL, c.close + L, c.close - _o * L, "x", 96)]
+
+        cer = [t for s, ctx in zip(series, ctxs)
+               for t in run(s, det, Config(max_rr=25.0), ctx=ctx) if t.outcome]
+        rs = [(t.rr if t.outcome == "TP" else -1.0) for t in cer]
+        p = sum(1 for r in rs if r > 0) / len(rs)
+        esp = sum(1.0 / (1.0 + t.rr) for t in cer) / len(cer)
+        se = (p * (1 - p) / len(cer)) ** 0.5
+        lo, hi = bootstrap_ci(rs)
+        dur = sum(t.exit_index - t.entry_index for t in cer) / len(cer)
+        print(f"{objetivo:>5.1f} {len(cer):>6} {100*p:>7.2f}% {100*esp:>8.2f}% "
+              f"{100*(p-esp):>+7.2f} {(p-esp)/se:>7.2f} {sum(rs)/len(rs):>+9.4f} "
+              f"{f'[{lo:+.4f},{hi:+.4f}]':>21} {dur:>6.1f}")
+    print("\nsigmas = a cuantos errores estandar esta el acierto de 1/(1+rr).")
+    print("Si el exceso crece con el R:P, el sesgo es mecanico y lo comparten")
+    print("todos los detectores: la referencia es el control emparejado, no el cero.")
+
+
 def bootstrap_ci(xs, n=3000, seed=17):
     rnd = random.Random(seed)
     b = sorted(sum(rnd.choice(xs) for _ in range(len(xs))) / len(xs) for _ in range(n))
@@ -174,17 +221,27 @@ def main() -> None:
     ap.add_argument("--datos", default=DATOS)
     ap.add_argument("--intrabar", default="sl", choices=["sl", "tp"])
     ap.add_argument("--comparar", action="store_true")
+    ap.add_argument("--barrido-rr", action="store_true",
+                    help="mide el sesgo del motor en funcion del R:P")
+    ap.add_argument("--subpasos", type=int, default=SUBPASOS)
     ap.add_argument("--series", type=int, default=SERIES,
                     help="caminatas por detector; subirlo estrecha el IC")
     ap.add_argument("--fib-al-cierre", action="store_true",
                     help="mide fib_golden entrando al cierre de la vela del toque")
     args = ap.parse_args()
     cfg = Config(intrabar=args.intrabar)
+    global SUBPASOS
+    SUBPASOS = args.subpasos
 
     sigma = volatilidad_real(args.datos)
     print(f"volatilidad horaria calibrada sobre datos reales: {sigma*100:.4f}%")
     print(f"{args.series} caminatas x {BARRAS:,} barras por detector")
+    print(f"{SUBPASOS} subpasos por vela")
     print(f"vela que toca ambas barreras -> se acredita {args.intrabar.upper()}\n")
+
+    if args.barrido_rr:
+        barrido_rr(sigma, args.series)
+        return
 
     series = [caminata(BARRAS, sigma, s) for s in range(1, args.series + 1)]
     ctxs = [build_ctx(s) for s in series]
