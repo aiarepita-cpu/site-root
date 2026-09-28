@@ -6,7 +6,8 @@ from datetime import datetime, timedelta
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
 
 from engine.candles import Candle
-from engine.levels import BUY, SELL, Level, build_ctx, hammer_sweep, yesterday_close
+from engine.levels import (BUY, SELL, Level, build_ctx, choch_ladder,
+                           hammer_sweep, yesterday_close)
 from engine.runner import Config, run, summarize
 
 
@@ -223,6 +224,55 @@ def test_zone_touch_resuelve_la_vela_de_entrada_simetricamente():
     print("test_zone_touch_resuelve_la_vela_de_entrada_simetricamente: OK")
 
 
+def test_escalera_reproduce_los_precios_del_video():
+    """La escalera debe dar los precios exactos medidos en el reel.
+
+    Ejemplo 1: tramo 6,820 (4785,365 -> 4778,545)
+    Ejemplo 2: tramo 8,268 (4647,306 -> 4639,038)
+    Los dos dan la misma rejilla en multiplos de medio tramo.
+    """
+    casos = [
+        (4785.365, 4778.545, {
+            -3.5: 4809.235, -3.0: 4805.825, -1.5: 4795.595, -1.0: 4792.185,
+            1.0: 4778.545, 2.0: 4771.725, 3.0: 4764.906, 3.5: 4761.496,
+            5.0: 4751.266, 5.5: 4747.856}),
+        (4647.306, 4639.038, {
+            -3.5: 4676.244, -3.0: 4672.110, -1.5: 4659.708, -1.0: 4655.574,
+            1.0: 4639.038, 2.0: 4630.770, 3.0: 4622.502, 3.5: 4618.368,
+            5.0: 4605.966, 5.5: 4601.832}),
+    ]
+    for h, l, esperado in casos:
+        leg = h - l
+        for m, precio in esperado.items():
+            assert abs((h - m * leg) - precio) < 0.002, (h, m, precio)
+    print("test_escalera_reproduce_los_precios_del_video: OK")
+
+
+def test_escalera_exige_inducement():
+    """Sin barrido del high anterior no hay senal."""
+    def serie_con(sweep_alto):
+        h1 = 115.0 if sweep_alto else 105.0
+        cs = [C(0, 100, 101, 99, 100), C(1, 100, 102, 99, 100),
+              C(2, 100, 110, 99, 100),                     # high anterior
+              C(3, 100, 102, 99, 100), C(4, 100, 101, 99, 100),
+              C(5, 100, 101, 90, 95),                      # swing low
+              C(6, 95, 101, 96, 100), C(7, 100, 102, 97, 100),
+              C(8, 100, h1, 99, 100),                      # barre (o no) el anterior
+              C(9, 100, 102, 99, 100), C(10, 100, 101, 99, 100),
+              C(11, 100, 101, 95, 95), C(12, 95, 96, 85, 88)]  # CHoCH bajo el low
+        for k, c in enumerate(cs):
+            c.index = k
+        return cs
+
+    con = serie_con(True)
+    sin = serie_con(False)
+    hay = [choch_ladder(con, k, build_ctx(con)) for k in range(len(con))]
+    no = [choch_ladder(sin, k, build_ctx(sin)) for k in range(len(sin))]
+    assert any(x for x in hay), "con barrido deberia emitir"
+    assert not any(x for x in no), "sin barrido no deberia emitir"
+    print("test_escalera_exige_inducement: OK")
+
+
 def test_summarize_aplica_costos():
     serie = [
         C(0, 95, 96, 94, 95), C(1, 95, 97, 94, 96),
@@ -250,5 +300,7 @@ if __name__ == "__main__":
     test_objetivo_por_multiplo_de_riesgo()
     test_zone_touch_entra_al_tocar_sin_ruptura()
     test_zone_touch_resuelve_la_vela_de_entrada_simetricamente()
+    test_escalera_reproduce_los_precios_del_video()
+    test_escalera_exige_inducement()
     test_summarize_aplica_costos()
     print("TODOS LOS TESTS PASARON")

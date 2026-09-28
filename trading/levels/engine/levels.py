@@ -319,3 +319,77 @@ def fib_golden_zone(candles: list[Candle], i: int, ctx: Ctx,
 
 
 DETECTORES["fib_golden"] = fib_golden_zone
+
+
+# ------------------------------------------------- escalera del CHoCH (reel Dd0y-0HhK55)
+def choch_ladder(candles: list[Candle], i: int, ctx: Ctx,
+                 entrada: float = 5.0, stop: float = 5.5, objetivo: float = 3.0,
+                 exigir_ind: bool = True, sentido: str = "contra",
+                 entry_mode: str = "zone_touch_close") -> list[Level]:
+    """Reel Dd0y-0HhK55 — "USE this Fibo for Sniper Entry". No es Fibonacci.
+
+    Los precios de las lineas etiquetadas se midieron en los dos ejemplos del
+    video y dan la MISMA escalera: anclada en el tramo del CHoCH, con los
+    niveles en multiplos exactos de MEDIO tramo. Ejemplo 1 (tramo 6,820) y
+    ejemplo 2 (tramo 8,268) coinciden al tercer decimal en -3,5 -3 -1,5 -1
+    0 +1 +2 +3 +3,5 +5 +5,5. Un Fibonacci tiene los niveles desigualmente
+    espaciados (0,236 / 0,382 / 0,5 / 0,618 / 0,786); esto es una rejilla
+    uniforme, asi que el nombre del video es incorrecto.
+
+    Las zonas grises del video son las bandas de medio tramo en +-3/3,5 y
+    +5/5,5, y las cajas de posicion arrancan en el borde de una zona con el
+    stop del otro lado. Con entrada en +5, stop en +5,5 y objetivo en +3 el
+    R:P sale 4,0, que es el valor que muestran dos de las cajas (4,06 y 3,38).
+
+    Estructura exigida, leida de las etiquetas BOS / choch / IND:
+      1. un swing low L, luego un swing high H que BARRE el high anterior
+         (eso es el inducement: `exigir_ind`)
+      2. el precio cierra de vuelta por debajo de L -> CHoCH bajista
+      3. tramo = H - L, y la escalera se proyecta hacia abajo desde H
+
+    `sentido="contra"` opera a favor del retroceso (comprar abajo tras un
+    CHoCH bajista), que es lo que muestran las cajas del video.
+    `sentido="favor"` sigue la rotura, para medir si la polaridad importa.
+    """
+    highs, lows = ctx.avail_highs(i), ctx.avail_lows(i)
+    if not highs or not lows:
+        return []
+    c, prev = candles[i], candles[i - 1]
+    out: list[Level] = []
+
+    def _emitir(ancla: float, leg: float, signo: int, tag: str) -> None:
+        """signo=-1 proyecta hacia abajo (CHoCH bajista), +1 hacia arriba."""
+        nivel = ancla + signo * entrada * leg
+        sl = ancla + signo * stop * leg
+        tp = ancla + signo * objetivo * leg
+        if sentido == "contra":
+            d = BUY if signo < 0 else SELL
+        else:
+            d = SELL if signo < 0 else BUY
+            nivel, tp = ancla + signo * 1.0 * leg, ancla + signo * entrada * leg
+            sl = ancla
+        out.append(Level(i, nivel, d, sl, tp, tag, 96, entry_mode=entry_mode))
+
+    # --- CHoCH bajista: cierre por debajo del ultimo swing low ---
+    l_idx, l_price = lows[-1]
+    posteriores = [(k, p) for k, p in highs if k > l_idx]
+    anteriores = [(k, p) for k, p in highs if k < l_idx]
+    if posteriores and c.close < l_price and prev.close >= l_price:
+        h_idx, h_price = posteriores[-1]
+        barrio = bool(anteriores) and h_price > anteriores[-1][1]
+        if (barrio or not exigir_ind) and h_price > l_price:
+            _emitir(h_price, h_price - l_price, -1, "escalera")
+
+    # --- CHoCH alcista: cierre por encima del ultimo swing high ---
+    h_idx, h_price = highs[-1]
+    posteriores = [(k, p) for k, p in lows if k > h_idx]
+    anteriores = [(k, p) for k, p in lows if k < h_idx]
+    if posteriores and c.close > h_price and prev.close <= h_price:
+        l_idx, l_price = posteriores[-1]
+        barrio = bool(anteriores) and l_price < anteriores[-1][1]
+        if (barrio or not exigir_ind) and h_price > l_price:
+            _emitir(l_price, h_price - l_price, +1, "escalera")
+    return out
+
+
+DETECTORES["escalera"] = choch_ladder
