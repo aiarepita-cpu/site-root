@@ -271,3 +271,62 @@ Es el mismo muro que mató la estrategia FVG. Una estrategia que opera 32 veces
 al año con R:P 5 no es verificable con los datos que existen, con edge o sin
 él. Eso no es un resultado sobre esta escalera en particular: es una propiedad
 de cualquier sistema de esa frecuencia y esa dispersión.
+
+## La escalera en M15
+
+El export de MT5 quedó topado en el límite por defecto de 100.000 barras:
+2022-06 a 2026-09, 4,25 años. Corte de holdout movido a 2025-03-01, porque
+dejarlo en 2023 daba medio año de desarrollo contra 3,75 de holdout.
+
+### Economía medida (contra el H1 del MISMO período)
+
+| | H1 | M15 |
+|---|---:|---:|
+| operaciones | 152 (36/año) | 641 (151/año) |
+| riesgo mediano | $6,46 (0,267%) | $3,40 (0,135%) |
+| desviación por operación | 2,53R | 1,87R |
+| umbral de detección | 0,574R | 0,207R |
+| costo con spread $0,30 | 0,046R | 0,088R |
+
+La volatilidad escala con la raíz del tiempo: M15/H1 = 0,504 contra 0,500
+teórico. El tramo del CHoCH se achica a la mitad y el costo se duplica.
+
+### Control de ruido, antes de mirar datos reales
+
+| detector | n | rr | expR | IC95 | veredicto |
+|---|---:|---:|---:|---|---|
+| escalera | 3.616 | 5,19 | +0,0476 | [−0,0264, +0,1251] | neutro |
+| control | 9.184 | 1,44 | +0,0077 | [−0,0175, +0,0329] | neutro |
+
+### Resultado
+
+| conjunto | n | expR | ruido | exceso | IC95 | veredicto |
+|---|---:|---:|---:|---:|---|---|
+| desarrollo <2025-03 | 361 | −0,325 | +0,034 | **−0,359** | [−0,529, −0,177] | peor que ruido |
+| holdout ≥2025-03 | 202 | −0,091 | +0,041 | −0,131 | [−0,432, +0,201] | indistinguible |
+| control (ambos) | 535 / 435 | — | — | −0,032 / −0,019 | contienen cero | indistinguible |
+
+**Es un resultado concluyente, y es negativo.** El exceso en desarrollo es
+−0,359R con IC que excluye el cero por amplio margen, muy por encima del umbral
+de detección de 0,255R para esa muestra. O sea que acá la medición SÍ tuvo
+potencia: no encontró "nada", encontró un efecto grande en contra.
+
+Agregando los dos conjuntos (n=563) el exceso es −0,277R. La escalera no
+carece de ventaja: **pierde sistemáticamente más que poner la misma geometría
+al azar**, antes de descontar el costo de 0,088R.
+
+### Corrección a la recomendación anterior
+
+Antes se dijo que hacía falta el export completo de 17 años para que la
+medición fuera concluyente. Ya no: ese argumento valía para detectar una
+ventaja PEQUEÑA y positiva (+0,088R), y lo que apareció es un efecto grande y
+negativo que la muestra actual mide de sobra. Más datos no cambiarían el signo.
+
+### Lo que el resultado sugiere, sin haberlo probado
+
+Entrar a 5 tramos de extensión tras un CHoCH, a favor del retroceso, es
+sistemáticamente malo: el precio continúa en vez de revertir. La hipótesis
+natural es la polaridad opuesta (`sentido="favor"`), que el detector ya soporta.
+Pero probarla sobre estos mismos datos es una segunda mirada al holdout que ya
+se gastó midiendo la dirección original, así que exigiría datos frescos —
+el export completo, u otro activo en M15— para que signifique algo.
