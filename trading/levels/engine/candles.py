@@ -6,6 +6,7 @@ _TS_FORMATS = (
     "%Y-%m-%d %H:%M:%S",
     "%Y-%m-%dT%H:%M:%S",
     "%Y-%m-%d %H:%M",
+    "%Y.%m.%d %H:%M:%S",
     "%Y.%m.%d %H:%M",
     "%Y-%m-%d",
 )
@@ -40,22 +41,45 @@ def _parse_ts(raw: str) -> datetime:
 
 
 def load_csv(path: str) -> list[Candle]:
-    """Carga un CSV OHLC con cabecera flexible (timestamp/date, open, high, low, close)."""
-    out: list[Candle] = []
-    with open(path, newline="", encoding="utf-8-sig") as f:
-        reader = csv.DictReader(f)
-        cols = {c.lower().strip(): c for c in reader.fieldnames}
+    """Carga un CSV OHLC.
 
-        def col(*names: str) -> str:
+    Acepta tanto el formato propio (`timestamp,open,high,low,close`) como la
+    exportacion NATIVA de MetaTrader 5, que viene con tabuladores, cabeceras
+    entre angulos y la fecha partida en dos columnas:
+
+        <DATE>\t<TIME>\t<OPEN>\t<HIGH>\t<LOW>\t<CLOSE>\t<TICKVOL>\t<VOL>\t<SPREAD>
+        2009.08.25\t22:00:00\t945.03\t945.08\t944.19\t944.24\t...
+
+    Asi el archivo que sale de MT5 se usa sin tocarlo.
+    """
+    with open(path, newline="", encoding="utf-8-sig") as f:
+        cabecera = f.readline()
+        f.seek(0)
+        sep = "\t" if cabecera.count("\t") >= 3 else ","
+        reader = csv.DictReader(f, delimiter=sep)
+        cols = {c.lower().strip().strip("<>"): c for c in reader.fieldnames}
+
+        def col(*names: str, req: bool = True) -> str | None:
             for n in names:
                 if n in cols:
                     return cols[n]
-            raise KeyError(f"falta alguna de {names} en {reader.fieldnames}")
+            if req:
+                raise KeyError(f"falta alguna de {names} en {reader.fieldnames}")
+            return None
 
-        ts_c = col("timestamp", "date", "time", "datetime")
+        fecha_c = col("timestamp", "date", "datetime")
+        # MT5 nativo: la hora va en su propia columna
+        hora_c = col("time", req=False)
+        if hora_c is not None and hora_c == fecha_c:
+            hora_c = None
         o_c, h_c, l_c, c_c = col("open"), col("high"), col("low"), col("close")
+
+        out: list[Candle] = []
         for row in reader:
-            out.append(Candle(0, _parse_ts(row[ts_c]), float(row[o_c]),
+            crudo = row[fecha_c]
+            if hora_c is not None and row.get(hora_c):
+                crudo = f"{crudo.strip()} {row[hora_c].strip()}"
+            out.append(Candle(0, _parse_ts(crudo), float(row[o_c]),
                               float(row[h_c]), float(row[l_c]), float(row[c_c])))
     out.sort(key=lambda c: c.timestamp)
     for i, c in enumerate(out):
