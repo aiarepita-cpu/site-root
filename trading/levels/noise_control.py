@@ -199,27 +199,36 @@ def resumen(obs):
 
 
 # ------------------------------------------------------------------ real
-def cargar_reales():
-    oro = load_csv(DATOS)
-    dev = [c for c in oro if c.timestamp < CORTE_HOLDOUT]
-    hold = [c for c in oro if c.timestamp >= CORTE_HOLDOUT]
+def cargar_reales(path: str = DATOS, corte: datetime = CORTE_HOLDOUT,
+                  cruzados: bool = True):
+    oro = load_csv(path)
+    dev = [c for c in oro if c.timestamp < corte]
+    hold = [c for c in oro if c.timestamp >= corte]
     for serie in (dev, hold):
         for i, c in enumerate(serie):
             c.index = i
     cruz = []
-    for sym in CRUZADOS:
+    for sym in (CRUZADOS if cruzados else []):
         s = load_csv(f"../fvg-h1/data/cross/{sym}_H1.csv")
         for i, c in enumerate(s):
             c.index = i
         cruz.append(s)
-    return {"desarrollo 09-22": [dev], "holdout 23-26": [hold], "cruzado 5 activos": cruz}
+    sets = {f"desarrollo <{corte.date()}": [dev], f"holdout >={corte.date()}": [hold]}
+    if cruz:
+        sets["cruzado 5 activos"] = cruz
+    return sets
 
 
 def main() -> None:
     global SUBPASOS
     ap = argparse.ArgumentParser()
     ap.add_argument("detectores", nargs="*")
-    ap.add_argument("--datos", default=DATOS)
+    ap.add_argument("--datos", default=DATOS,
+                    help="serie para calibrar la volatilidad del ruido")
+    ap.add_argument("--reales", default=None,
+                    help="serie a medir en --comparar (por defecto, el oro H1)")
+    ap.add_argument("--corte", default=None,
+                    help="fecha AAAA-MM-DD que separa desarrollo de holdout")
     ap.add_argument("--intrabar", default="sl", choices=["sl", "tp"])
     ap.add_argument("--comparar", action="store_true")
     ap.add_argument("--barrido-rr", action="store_true",
@@ -283,7 +292,11 @@ def main() -> None:
     print("\n\nREAL CONTRA SU PROPIO RUIDO (emparejado por cubo de R:R)")
     print("Cada operación real se mide contra la expectativa que el mismo")
     print("detector obtuvo sobre ruido con un R:R comparable.\n")
-    reales = {k: (v, [build_ctx(s) for s in v]) for k, v in cargar_reales().items()}
+    corte = (datetime.strptime(args.corte, "%Y-%m-%d") if args.corte
+             else CORTE_HOLDOUT)
+    crudos = cargar_reales(args.reales or DATOS, corte,
+                           cruzados=args.reales is None)
+    reales = {k: (v, [build_ctx(s) for s in v]) for k, v in crudos.items()}
 
     base = {}
     for nombre, obs in ruido.items():
