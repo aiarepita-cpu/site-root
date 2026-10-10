@@ -27,7 +27,7 @@ python3 memory/init_ledger.py
 
 1. **Research**: memos in `research/`. Agents check the ledger first: `python3 memory/ledger.py search --market SPY`.
 2. **Code**: `strategies/<name>_v<N>.py` plus boundary tests in `tests/`.
-3. **Backtest**: prediction saved first (`backtests/<strategy>-prediction.md`, never edited), sealed final period used once,
+3. **Backtest**: `python3 -m src.fetch_data` (or drop CSVs in `data/`), write `backtests/<strategy>-prediction.md`, then `python3 -m src.backtest --strategy <name>_v<N> --hypothesis <id>`. Final 30% of dates is sealed (`backtests/config.json`); the prediction is hash-locked on first run; walk-forward, 2x costs, delayed fills, 5 worst periods;
    walk-forward, 2x costs, worst periods. Every attempt calls `ledger.record_backtest` (counts variations for the Deflated Sharpe). Cap: 3–5 revisions per idea.
 4. **Paper trade**: `python3 -m src.runner`, once per trading day before the open. Trades only ledger ideas with status
    `passed backtest only`/`passed paper` **and** a sealed-test result, one strategy per paper account.

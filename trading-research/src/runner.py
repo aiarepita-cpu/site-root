@@ -131,13 +131,13 @@ def decide_per_symbol(strat, bars, acct, max_pos_frac, with_volume):
     return out
 
 
-def decide_rotation(strat, bars, acct, max_pos_frac, trading):
+def decide_rotation(strat, bars, acct, max_pos_frac, next_day_fn):
     held = [s for s in strat.UNIVERSE if acct["positions"].get(s, {}).get("qty", 0) > 0]
     if len(held) > 1:
         raise RuntimeError(f"Rotation should hold at most one ETF, holds {held}")
     current = held[0] if held else None
     last = bars[strat.UNIVERSE[0]]["dates"][-1]
-    rebalance = strat.is_rebalance_day(last, next_trading_day(trading, last))
+    rebalance = strat.is_rebalance_day(last, next_day_fn(last))
     closes = {s: bars[s]["closes"] for s in strat.UNIVERSE}
     out = []
     if strat.exit_signal(closes, current, rebalance):
@@ -151,6 +151,14 @@ def decide_rotation(strat, bars, acct, max_pos_frac, trading):
         why = "Not a month-end rebalance day." if not rebalance else "Target unchanged."
         out.append((current or strat.UNIVERSE[0], None, 0, why))
     return out
+
+
+def decide(strat, bars, acct, max_pos_frac, next_day_fn):
+    """Same decision logic for the live runner and the backtester."""
+    if strat.STRATEGY_NAME == "relative_strength_rotation":
+        return decide_rotation(strat, bars, acct, max_pos_frac, next_day_fn)
+    return decide_per_symbol(strat, bars, acct, max_pos_frac,
+                             with_volume=strat.STRATEGY_NAME == "volume_breakout")
 
 
 # --- main loop -------------------------------------------------------------------
@@ -191,11 +199,7 @@ def run_once(trading, data, conn, now=None, limits=None, journal_dir=None, state
 
     bars = fetch_bars(data, strat.UNIVERSE, now)
     max_pos_frac = limits["max_position_pct"] / 100
-    if strat.STRATEGY_NAME == "relative_strength_rotation":
-        intents = decide_rotation(strat, bars, acct, max_pos_frac, trading)
-    else:
-        intents = decide_per_symbol(strat, bars, acct, max_pos_frac,
-                                    with_volume=strat.STRATEGY_NAME == "volume_breakout")
+    intents = decide(strat, bars, acct, max_pos_frac, lambda d: next_trading_day(trading, d))
 
     pending = open_order_symbols(trading)
     for sym, side, qty, why in intents:
