@@ -1,0 +1,17 @@
+# Secrets and local config: never commit
+config/*
+!config/.env.example
+!config/risk_limits.example.yaml
+
+# Historical price data
+data/*
+!data/.gitkeep
+
+# SQLite transient files
+memory/*.db-journal
+memory/*.db-wal
+memory/*.db-shm
+
+__pycache__/
+*.pyc
+.venv/
