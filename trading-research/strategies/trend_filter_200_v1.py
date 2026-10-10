@@ -15,7 +15,7 @@ PARAMS = {
     "sma_window": 200,
 }
 
-# Strategy-level risk. The global caps in config/risk_limits.yaml are applied on top.
+# Strategy-level risk. The global caps in config/risk.json are applied on top.
 RISK = {
     "target_weight_per_symbol": 1 / 3,  # equal split across the universe
     "stop_loss_pct": None,              # none by design: the SMA cross is the exit

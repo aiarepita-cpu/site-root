@@ -1,3 +1,2 @@
 alpaca-py
 python-dotenv
-pyyaml

@@ -26,11 +26,29 @@ def _load_keys() -> tuple[str, str]:
     return key, secret
 
 
+def assert_paper(client) -> None:
+    """Refuse any trading client not pointed at Alpaca's paper endpoint."""
+    from alpaca.common.enums import BaseURL
+
+    if getattr(client, "_base_url", None) != BaseURL.TRADING_PAPER:
+        raise LiveTradingRefused("Trading client is not on the paper endpoint.")
+
+
 def get_trading_client():
-    """Return a paper TradingClient. There is deliberately no live option."""
+    """Return a paper TradingClient. There is deliberately no live option or URL override."""
     from alpaca.trading.client import TradingClient
 
     key, secret = _load_keys()
     client = TradingClient(key, secret, paper=True)
+    del key, secret
+    assert_paper(client)
+    return client
+
+
+def get_data_client():
+    from alpaca.data.historical import StockHistoricalDataClient
+
+    key, secret = _load_keys()
+    client = StockHistoricalDataClient(key, secret)
     del key, secret
     return client

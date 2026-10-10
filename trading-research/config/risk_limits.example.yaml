@@ -1,7 +1,0 @@
-# Copy to config/risk_limits.yaml and adjust. All values are placeholders.
-max_position_pct_of_equity: 0.05   # max size of any single position
-max_gross_exposure_pct: 1.0        # sum of |positions| / equity
-max_daily_loss_pct: 0.02           # stop opening new trades after this drawdown in a day
-max_open_positions: 10
-max_orders_per_day: 20
-allowed_asset_classes: [us_equity]

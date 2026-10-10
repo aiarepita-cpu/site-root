@@ -12,10 +12,10 @@ Each file is pure Python (no I/O, no broker calls) and contains, in order:
 1. Module docstring: one line starting with `Hypothesis:`.
 2. `STRATEGY_NAME`, `VERSION`, `HYPOTHESIS`, `MEMO` (link to the research memo), `UNIVERSE`.
 3. `PARAMS`: fixed parameters. Changing one means a new version.
-4. `RISK`: strategy-level risk (target weight, stop rules). Global caps in `config/risk_limits.yaml` apply on top.
+4. `RISK`: strategy-level risk (target weight, stop rules). Global caps in `config/risk.json` apply on top.
 5. Entry rules: `entry_signal(...)`.
 6. Exit rules: `exit_signal(...)`.
-7. Position sizing: `position_size(equity, price, max_position_pct)`; returns whole shares.
+7. Position sizing: `position_size(equity, price, max_position_pct)`; returns whole shares. `max_position_pct` is a fraction here (0.10); the runner converts from the percent in `config/risk.json`.
 
 Signals use data up to and including today's close; the caller fills at the next open.
 
