@@ -58,10 +58,21 @@ def update_peak(equity: float, state_path=STATE_PATH) -> float:
     return peak
 
 
+def history_peak(trading) -> float:
+    """Highest daily equity in the account's own history (survives fresh containers)."""
+    from alpaca.trading.requests import GetPortfolioHistoryRequest
+
+    try:
+        hist = trading.get_portfolio_history(GetPortfolioHistoryRequest(period="all", timeframe="1D"))
+        return max((float(e) for e in (hist.equity or []) if e is not None), default=0.0)
+    except Exception:  # noqa: BLE001 - fall back to the local high-water mark
+        return 0.0
+
+
 def account_snapshot(trading, state_path=STATE_PATH) -> dict:
     acct = trading.get_account()
     equity, last_equity = float(acct.equity), float(acct.last_equity)
-    peak = update_peak(equity, state_path)
+    peak = update_peak(max(equity, history_peak(trading)), state_path)
     positions = {p.symbol: {"qty": float(p.qty), "market_value": float(p.market_value)}
                  for p in trading.get_all_positions()}
     return {

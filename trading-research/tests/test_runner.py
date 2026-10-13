@@ -38,6 +38,8 @@ class FakeTrading:
     def get_orders(self, req): return self._open
     def get_calendar(self, req): return [NS(date=self._next)]
     def get_clock(self): return NS(is_open=self.is_open, timestamp=NOW)
+    def get_portfolio_history(self, req): return NS(equity=self.history)
+    history = []
     is_open = False
 
     def submit_order(self, order_data):
@@ -63,6 +65,16 @@ def flat_then(last, n=200):
 
 
 class RunnerTest(unittest.TestCase):
+    def test_drawdown_uses_account_history_peak(self):
+        # Fresh container (no local state): peak 110k in Alpaca history, equity now 100k = 9.1% drawdown.
+        self.clear("trend_filter_200")
+        t = FakeTrading()
+        t.history = [100_000.0, 110_000.0, None, 104_000.0]
+        entries = self.run_(t, FakeData({s: flat_then(101) for s in UNIVERSE}))
+        self.assertEqual(t.submitted, [])
+        self.assertEqual({e["risk_check"] for e in entries if e["decision"] == "BLOCKED"},
+                         {"Max drawdown hit. Trading stopped."})
+
     def test_partial_bar_ignored_while_market_open(self):
         self.clear("trend_filter_200")
         t = FakeTrading()
