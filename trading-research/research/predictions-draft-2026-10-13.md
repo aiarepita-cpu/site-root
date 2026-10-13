@@ -1,6 +1,6 @@
 # DRAFT predictions (not locked)
 
-Status: **draft for the owner to edit and approve.** Nothing here is a prediction until the owner approves it.
+Status: **APPROVED by the owner on 2026-10-13, unchanged.** Copied to `backtests/<strategy>-prediction.md`.
 On approval, each section is copied to `backtests/<strategy>-prediction.md` and hash-locked on the first backtest run.
 
 Basis: reasoning from `research/momentum-analyst-2026-10-10.md` and general knowledge of trend-following on US index ETFs.

@@ -19,7 +19,6 @@ ROOT = Path(__file__).resolve().parents[1]
 sys.path[:0] = [str(ROOT), str(ROOT / "memory")]
 
 import ledger  # noqa: E402
-import risk  # noqa: E402
 from src import data as data_mod  # noqa: E402
 from src.runner import decide, load_strategy  # noqa: E402
 
@@ -224,7 +223,7 @@ def run(strategy_id, hypothesis_id, conn, data_dir=data_mod.DATA_DIR, bt_dir=BT_
         raise SystemExit(f"Ledger #{hypothesis_id} is not {strategy_id}.")
     strat = load_strategy(f"strategies/{strategy_id}.py")
     if max_pos_frac is None:
-        max_pos_frac = risk.load_limits()["max_position_pct"] / 100
+        max_pos_frac = 1.0  # owner-approved: strategy target weights, not the paper-trading cap
 
     full = data_mod.align({s: data_mod.load_csv(s, data_dir) for s in strat.UNIVERSE})
     dev = data_mod.dev_data(full)
