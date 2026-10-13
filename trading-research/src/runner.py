@@ -73,16 +73,19 @@ def account_snapshot(trading, state_path=STATE_PATH) -> dict:
     }
 
 
-def fetch_bars(data, symbols, now):
-    from alpaca.data.enums import Adjustment, DataFeed
+def fetch_bars(data, symbols, now, exclude_date=None):
+    """Completed daily bars only: pass exclude_date=today while the session is open
+    (today's bar is still forming). Same feed and adjustment as the backtest data."""
+    from alpaca.data.enums import Adjustment
     from alpaca.data.requests import StockBarsRequest
     from alpaca.data.timeframe import TimeFrame
 
     req = StockBarsRequest(symbol_or_symbols=list(symbols), timeframe=TimeFrame.Day,
                            start=now - timedelta(days=420), end=now - timedelta(minutes=20),
-                           adjustment=Adjustment.ALL, feed=DataFeed.IEX)
+                           adjustment=Adjustment.ALL)
     out = {}
     for sym, bars in data.get_stock_bars(req).data.items():
+        bars = [b for b in bars if b.timestamp.date() != exclude_date]
         out[sym] = {"dates": [b.timestamp.date() for b in bars],
                     "closes": [float(b.close) for b in bars],
                     "volumes": [float(b.volume) for b in bars]}
@@ -197,7 +200,9 @@ def run_once(trading, data, conn, now=None, limits=None, journal_dir=None, state
             reasoning="Alpaca reports the paper account as blocked. Nothing traded.")
         return
 
-    bars = fetch_bars(data, strat.UNIVERSE, now)
+    clock = trading.get_clock()
+    bars = fetch_bars(data, strat.UNIVERSE, now,
+                      exclude_date=clock.timestamp.date() if clock.is_open else None)
     max_pos_frac = limits["max_position_pct"] / 100
     intents = decide(strat, bars, acct, max_pos_frac, lambda d: next_trading_day(trading, d))
 

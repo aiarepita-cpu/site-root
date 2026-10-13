@@ -37,6 +37,8 @@ class FakeTrading:
     def get_all_positions(self): return self._positions
     def get_orders(self, req): return self._open
     def get_calendar(self, req): return [NS(date=self._next)]
+    def get_clock(self): return NS(is_open=self.is_open, timestamp=NOW)
+    is_open = False
 
     def submit_order(self, order_data):
         self.submitted.append(order_data)
@@ -61,6 +63,14 @@ def flat_then(last, n=200):
 
 
 class RunnerTest(unittest.TestCase):
+    def test_partial_bar_ignored_while_market_open(self):
+        self.clear("trend_filter_200")
+        t = FakeTrading()
+        t.is_open = True
+        # Completed bars end flat at 100 (no entry); today's partial bar (101) would trigger one.
+        self.run_(t, FakeData({s: flat_then(100, 200) + [101.0] for s in UNIVERSE}, last_date=NOW.date()))
+        self.assertEqual(t.submitted, [])
+
     def setUp(self):
         self.tmp = tempfile.TemporaryDirectory()
         self.dir = Path(self.tmp.name)
