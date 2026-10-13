@@ -1,0 +1,60 @@
+{
+  "strategy": "trend_filter_200_v1",
+  "hypothesis_id": 1,
+  "run_date": "2026-10-13",
+  "prediction_sha256": "9b162b5dc58f1afb46b3f8661b0ba6aab4a1dc431f210f9c6589b97c6ef29dce",
+  "kind": "sealed",
+  "period": {
+    "start": "2023-07-18",
+    "end": "2026-10-12",
+    "bars": 813
+  },
+  "assumptions": {
+    "sealed_fraction": 0.3,
+    "cost_bps_per_side": 2.0,
+    "slippage_bps_per_side": 1.0,
+    "walk_forward_windows": 5,
+    "worst_periods": 5,
+    "benchmark": "SPY",
+    "max_position_frac": 1.0,
+    "fills": "next open"
+  },
+  "sealed": {
+    "total_return_pct": 58.74,
+    "cagr_pct": 15.42,
+    "max_drawdown_pct": 10.25,
+    "sharpe": 1.105,
+    "trades": 12,
+    "win_rate_pct": 58.3,
+    "days": 813,
+    "open_trades_at_end": 3,
+    "deflated_sharpe": 0.975
+  },
+  "costs_2x": {
+    "total_return_pct": 58.32,
+    "cagr_pct": 15.33,
+    "max_drawdown_pct": 10.25,
+    "sharpe": 1.099,
+    "trades": 12,
+    "win_rate_pct": 58.3,
+    "days": 813
+  },
+  "equal_weight_buy_hold": {
+    "total_return_pct": 74.18,
+    "cagr_pct": 18.79,
+    "max_drawdown_pct": 21.61,
+    "sharpe": 1.076,
+    "trades": 0,
+    "win_rate_pct": null,
+    "days": 813
+  },
+  "spy_buy_hold": {
+    "total_return_pct": 78.28,
+    "cagr_pct": 19.65,
+    "max_drawdown_pct": 18.75,
+    "sharpe": 1.27,
+    "trades": 0,
+    "win_rate_pct": null,
+    "days": 813
+  }
+}
