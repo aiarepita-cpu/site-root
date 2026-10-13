@@ -268,6 +268,60 @@ def run(strategy_id, hypothesis_id, conn, data_dir=data_mod.DATA_DIR, bt_dir=BT_
     return result, stem
 
 
+def run_sealed(strategy_id, hypothesis_id, conn, data_dir=data_mod.DATA_DIR, bt_dir=BT_DIR, max_pos_frac=1.0):
+    """The one run on the sealed final period. Same strategy, same costs, same rules; no tuning.
+    Does not count as a new variation. Refuses if the sealed period was already used for this idea."""
+    prediction, digest = check_prediction(strategy_id, bt_dir)
+    h = next((r for r in ledger.search(conn) if r["id"] == hypothesis_id), None)
+    if h is None or Path(h["strategy_file"]).stem != strategy_id:
+        raise SystemExit(f"Ledger #{hypothesis_id} is not {strategy_id}.")
+    if not h["backtest_result"] or h["variations_tried"] < 1:
+        raise SystemExit("Run the development backtest before the sealed run.")
+    strat = load_strategy(f"strategies/{strategy_id}.py")
+    full = data_mod.align({s: data_mod.load_csv(s, data_dir) for s in strat.UNIVERSE})
+    if data_mod.split_index(len(full[strat.UNIVERSE[0]]["dates"])) < WARMUP:
+        raise SystemExit("Not enough history before the sealed period for indicators.")
+
+    bars, k = data_mod.sealed_data(full, conn, hypothesis_id)  # marks it used from here on
+    n = len(bars[strat.UNIVERSE[0]]["dates"])
+    kw = {"max_pos_frac": max_pos_frac}
+    sim = simulate(strat, bars, k, n, **kw)
+    m = metrics(sim)
+    bh = metrics(buy_and_hold(bars, strat.UNIVERSE, k, n))
+    result = {
+        "strategy": strategy_id, "hypothesis_id": hypothesis_id, "run_date": date.today().isoformat(),
+        "prediction_sha256": digest, "kind": "sealed",
+        "period": {"start": sim["start"], "end": sim["end"], "bars": len(sim["equity"])},
+        "assumptions": {**CONFIG, "max_position_frac": max_pos_frac, "fills": "next open"},
+        "sealed": {**public(m), "open_trades_at_end": sim["open_trades"],
+                   "deflated_sharpe": _round(deflated_sharpe(m["_daily_sr"], m["days"] - 1, m["_skew"],
+                                                             m["_kurt"], h["variations_tried"]))},
+        "costs_2x": public(metrics(simulate(strat, bars, k, n, cost_mult=2.0, **kw))),
+        "equal_weight_buy_hold": public(bh),
+        "spy_buy_hold": public(metrics(buy_and_hold(bars, (CONFIG["benchmark"],), k, n))),
+    }
+    stem = f"{result['run_date']}_{strategy_id}_sealed"
+    (Path(bt_dir) / f"{stem}.json").write_text(json.dumps(result, indent=2))
+    cols = ["total_return_pct", "cagr_pct", "max_drawdown_pct", "win_rate_pct", "trades", "sharpe"]
+    (Path(bt_dir) / f"{stem}.md").write_text(
+        f"# Sealed-period run: {strategy_id}\n\n"
+        f"- Run: {result['run_date']}, ledger #{hypothesis_id}, used once; no changes since the dev backtest\n"
+        f"- Period: {sim['start']} to {sim['end']} ({len(sim['equity'])} bars)\n"
+        f"- Deflated Sharpe Ratio: **{result['sealed']['deflated_sharpe']}** (trials: {h['variations_tried']})\n\n"
+        + _table([{"case": "strategy (sealed)", **result["sealed"]}, {"case": "costs 2x", **result["costs_2x"]},
+                  {"case": "equal-weight buy & hold", **bh}, {"case": "SPY buy & hold", **result["spy_buy_hold"]}],
+                 ["case"] + cols)
+        + "\n## Comparison against the prediction\n\n_To be written by the reviewer._\n")
+    ledger.update(conn, hypothesis_id, sealed_test_result=(
+        f"Sharpe {m['sharpe']} vs B&H {bh['sharpe']}, MDD {m['max_drawdown_pct']}% vs {bh['max_drawdown_pct']}%, "
+        f"see backtests/{stem}.md"))
+    return result, stem
+
+
+def _round(x):
+    return round(x, 3) if x is not None else None
+
+
 def _table(rows, cols):
     head = "| " + " | ".join(cols) + " |\n|" + "---|" * len(cols) + "\n"
     return head + "".join("| " + " | ".join(str(r.get(c)) for c in cols) + " |\n" for r in rows)
@@ -302,9 +356,10 @@ def main():
     p = argparse.ArgumentParser()
     p.add_argument("--strategy", required=True, help="e.g. trend_filter_200_v1")
     p.add_argument("--hypothesis", type=int, required=True, help="ledger id")
+    p.add_argument("--sealed", action="store_true", help="the ONE run on the sealed period")
     a = p.parse_args()
     with ledger.connect() as conn:
-        _, stem = run(a.strategy, a.hypothesis, conn)
+        _, stem = (run_sealed if a.sealed else run)(a.strategy, a.hypothesis, conn)
     print(f"Saved backtests/{stem}.md and .json")
 
 

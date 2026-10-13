@@ -167,3 +167,43 @@ class FullRun(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class SealedRun(FullRun):
+    def sealed(self):
+        return bt.run_sealed("trend_filter_200_v1", self.hid, self.conn, data_dir=self.d / "data",
+                             bt_dir=self.d / "bt")
+
+    def test_requires_dev_backtest_first(self):
+        write_csvs(self.d / "data")
+        with self.assertRaises(SystemExit):
+            self.sealed()
+        self.assertIsNone(ledger.search(self.conn)[0]["sealed_test_result"])  # not burned
+
+    def test_runs_once_only_and_does_not_count_a_variation(self):
+        write_csvs(self.d / "data")
+        self.go()
+        r, stem = self.sealed()
+        row = ledger.search(self.conn)[0]
+        self.assertEqual(row["variations_tried"], 1)
+        self.assertTrue(row["sealed_test_result"].startswith("Sharpe"))
+        self.assertTrue((self.d / "bt" / f"{stem}.md").exists())
+        with self.assertRaises(dm.SealedPeriodError):
+            self.sealed()
+
+    def test_covers_exactly_the_sealed_dates(self):
+        write_csvs(self.d / "data", n=1500)
+        self.go()
+        r, _ = self.sealed()
+        full = dm.align({s: dm.load_csv(s, self.d / "data") for s in ("SPY", "QQQ", "IWM")})
+        dates = full["SPY"]["dates"]
+        self.assertEqual(r["period"]["start"], dates[dm.split_index(len(dates))].isoformat())
+        self.assertEqual(r["period"]["end"], dates[-1].isoformat())
+
+    def test_refuses_if_prediction_changed(self):
+        write_csvs(self.d / "data")
+        self.go()
+        (self.d / "bt" / "trend_filter_200_v1-prediction.md").write_text("changed")
+        with self.assertRaises(SystemExit):
+            self.sealed()
+        self.assertIsNone(ledger.search(self.conn)[0]["sealed_test_result"])
