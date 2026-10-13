@@ -10,7 +10,7 @@ AI-assisted research loop: idea, then hypothesis, then backtest, then paper trad
 | `backtests/`  | Backtest results                                          | yes     |
 | `journal/`    | Every paper-trading decision and its reasoning            | yes     |
 | `memory/`     | Hypothesis ledger, `ledger.db` (SQLite)                   | yes     |
-| `config/`     | `.env` (API keys), `risk.json` (kill-switch limits)       | **no** (only `*.example*` files are tracked) |
+| `config/`     | `.env` (API keys), `risk.json` (kill-switch limits)       | `.env`: **no**. `risk.json` and `*.example*`: yes |
 | `data/`       | Historical prices                                         | **no**  |
 | `src/`        | Shared code (`broker.py` is the only Alpaca entry point)  | yes     |
 

@@ -2,6 +2,8 @@
 config/*
 !config/.env.example
 !config/risk.example.json
+# Kill-switch limits are not secret and must survive fresh containers
+!config/risk.json
 
 # Historical price data
 data/*
