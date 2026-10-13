@@ -1,0 +1,8 @@
+{
+  "sealed_fraction": 0.30,
+  "cost_bps_per_side": 2.0,
+  "slippage_bps_per_side": 1.0,
+  "walk_forward_windows": 5,
+  "worst_periods": 5,
+  "benchmark": "SPY"
+}

@@ -1,0 +1,22 @@
+# Secrets and local config: never commit
+config/*
+!config/.env.example
+!config/risk.example.json
+# Kill-switch limits are not secret and must survive fresh containers
+!config/risk.json
+
+# Historical price data
+data/*
+!data/.gitkeep
+
+# SQLite transient files
+memory/*.db-journal
+memory/*.db-wal
+memory/*.db-shm
+
+__pycache__/
+*.pyc
+.venv/
+
+# Runner state
+memory/equity_peak.json
